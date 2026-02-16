@@ -37,7 +37,7 @@ export class UserController {
 
   deleteUser(req: Request<{ id: string }>, res: Response) {
   const success = userService.deleteUser(req.params.id);
-
+ 
   if (!success) {
     return res.status(404).json({ message: "User not found" });
   }

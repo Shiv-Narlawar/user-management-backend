@@ -1,6 +1,16 @@
 import { User } from "../models/user.model";
 
-const users: User[] = [];
+const users: User[] = [
+  {
+    id: "1",
+    name: "Admin User",
+    email: "admin@test.com",
+    password: "123456",
+    role: "admin",
+    status: "ACTIVE"
+  }
+];
+
 
 export class UserService {
   getAllUsers(): User[] {
@@ -11,10 +21,16 @@ export class UserService {
     return users.find(user => user.id === id);
   }
   
-  createUser(user: User): User {
-    users.push(user);
-    return user;
-  }
+  createUser(userData: Omit<User, "id">): User {
+  const newUser: User = {
+    id: Date.now().toString(),
+    ...userData,
+  };
+
+  users.push(newUser);
+  return newUser;
+}
+
 
   updateUser(id: string, updatedData: Partial<User>): User | undefined {
     const user = users.find(u => u.id === id);
