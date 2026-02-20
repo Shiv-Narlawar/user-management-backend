@@ -1,16 +1,16 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
   Column,
   OneToMany,
   ManyToOne,
   Index,
-  CreateDateColumn,
-  UpdateDateColumn,
   DeleteDateColumn,
+  JoinColumn,
 } from "typeorm";
-import { Role } from "./role.entity";
+import { Role, RoleName } from "./role.entity";
 import { RefreshToken } from "./refresh-token.entity";
+import { AppBaseEntity } from "./base.entity";
+import { Department } from "./department.entity";
 
 export enum UserStatus {
   ACTIVE = "ACTIVE",
@@ -18,19 +18,17 @@ export enum UserStatus {
 }
 
 @Entity()
-export class User {
-  @PrimaryGeneratedColumn("uuid")
-  id!: string;
-
+export class User extends AppBaseEntity {
   @Column()
   name!: string;
 
   @Index({ unique: true })
-  @Column() 
-  email!: string;
+@Column({ type: "varchar" })
+email!: string;
 
-  @Column({ select: false })
-  password!: string;
+  @Column({ type: "varchar", select: false })
+password!: string;
+
 
   @Column({
     type: "enum",
@@ -39,25 +37,44 @@ export class User {
   })
   status!: UserStatus;
 
-  @CreateDateColumn()
-  createdAt!: Date;
-
-  @UpdateDateColumn()
-  updatedAt!: Date;
+  @Index()
+  @Column({
+    type: "enum",
+    enum: RoleName,
+    default: RoleName.USER,
+    nullable: true,
+  })
+  roleName?: RoleName | null;
 
   @DeleteDateColumn()
-  deletedAt?: Date;
+  deletedAt?: Date | null;
 
   @Index()
-  @ManyToOne(() => Role, (role) => role.users)
-  role!: Role;
+  @ManyToOne(() => Role, (role) => role.users, { nullable: true })
+  role?: Role | null;
 
-  @Column({ nullable: true })
-  resetCode?: string;
+  @Index()
+  @Column({ type: "uuid", nullable: true })
+  departmentId?: string | null;
+
+  @ManyToOne(() => Department, (d) => d.users, {
+    nullable: true,
+    onDelete: "SET NULL",
+  })
+  @JoinColumn({ name: "departmentId" })
+  department?: Department | null;
+
+  @Column({ type: "varchar", nullable: true })
+resetCode?: string | null;
+
+@Column({ type: "timestamptz", nullable: true })
+resetCodeExpiry?: Date | null;
 
   @OneToMany(() => RefreshToken, (rt) => rt.user)
- refreshTokens!: RefreshToken[];
+  refreshTokens!: RefreshToken[];
 
-  @Column({ type: "timestamp", nullable: true })
-  resetCodeExpiry?: Date;
-}
+  @Column({ default: false })
+mustChangePassword!: boolean;
+
+@Column({ type: "timestamptz", nullable: true })
+tempPasswordExpiry?: Date | null;}

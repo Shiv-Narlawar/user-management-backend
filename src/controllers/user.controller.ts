@@ -1,65 +1,315 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import { UserService } from "../services/user.service";
+import { RoleName } from "../entities/role.entity";
+import { AuthRequest } from "../types/auth-request";
+import { AppDataSource } from "../config/data-source";
+import { Department } from "../entities/department.entity";
 
 const userService = new UserService();
 
+/** ---------- Helpers ---------- */
+function isUuid(v: unknown): v is string {
+  return (
+    typeof v === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)
+  );
+}
+
+function isEmail(v: unknown): v is string {
+  return typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function normalizeSearch(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  if (!s || s.length > 100) return undefined;
+  return s;
+}
+
 export class UserController {
-  async getUsers(req: Request, res: Response) {
-    const users = await userService.getAllUsers();
-    return res.json(users);
-  }
-
-  async getUser(req: Request<{ id: string }>, res: Response) {
-    const { id } = req.params;
-
-    const user = await userService.getUserById(id);
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+  // ================= GET USERS =================
+  async getUsers(req: AuthRequest, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
-    return res.json(user);
-  }
+    const search = normalizeSearch(req.query.search);
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
 
-  async createUser(req: Request, res: Response) {
+    let departmentId: string | undefined;
+
+    // Non-admin scoping
+    if (req.user.role !== RoleName.ADMIN) {
+      if (req.user.role === RoleName.MANAGER) {
+        const deptRepo = AppDataSource.getRepository(Department);
+        const myDept = await deptRepo.findOne({
+          where: { managerId: req.user.id },
+        });
+
+        if (!myDept) {
+          return res.status(200).json({
+            data: [],
+            total: 0,
+            page,
+            limit,
+            totalPages: 1,
+          });
+        }
+
+        departmentId = myDept.id;
+      } else {
+        // USER scoping: only their department
+        const currentUser = await userService.getUserById(req.user.id);
+
+        if (!currentUser) {
+          return res.status(401).json({ message: "User not found" });
+        }
+
+        if (!currentUser.departmentId) {
+          return res.status(200).json({
+            data: [],
+            total: 0,
+            page,
+            limit,
+            totalPages: 1,
+          });
+        }
+
+        departmentId = currentUser.departmentId;
+      }
+    }
+
+    const result = await userService.getAllUsers({
+      search,
+      departmentId,
+      page,
+      limit,
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    return res.status(500).json({ message: "Failed to fetch users" });
+  }
+}
+
+  // ================= GET SINGLE USER =================
+  async getUser(req: AuthRequest, res: Response) {
     try {
-      // Check if email already exists
-      const existingUser = await userService.findUserByEmail(req.body.email);
-      if (existingUser) {
-        return res.status(400).json({
-          message: "Email already exists",
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const id = String(req.params.id);
+
+      if (!isUuid(id)) {
+        return res.status(400).json({ message: "Invalid user id" });
+      }
+
+      const user = await userService.getUserById(id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (req.user.role === RoleName.ADMIN) {
+        return res.status(200).json(user); 
+      }
+
+      const me = await userService.getUserById(req.user.id);
+
+      if (!me || me.departmentId !== user.departmentId) {
+        return res.status(403).json({
+          message: "You can only view users from your department",
         });
       }
 
-      // Create new user
-      const user = await userService.createUser(req.body);
-      return res.status(201).json(user);
-    } catch (error: any) {
-      return res.status(500).json({
-        message: "Internal Server Error",
+      return res.status(200).json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      return res.status(500).json({ message: "Failed to fetch user" });
+    }
+  }
+
+  // ================= GET MANAGERS =================
+  async getManagers(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const managers = await userService.getManagers();
+
+      return res.status(200).json({
+        data: managers,
       });
+    } catch (error) {
+      console.error("Error fetching managers:", error);
+      return res.status(500).json({ message: "Failed to fetch managers" });
     }
   }
 
-  async updateUser(req: Request<{ id: string }>, res: Response) {
-    const { id } = req.params;
+  // ================= CREATE USER =================
+  async createUser(req: AuthRequest, res: Response) {
+    try {
+      const { email, name, password } = req.body;
 
-    const user = await userService.updateUser(id, req.body);
+      if (!isEmail(email)) {
+        return res.status(400).json({ message: "Valid email is required" });
+      }
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      if (name !== undefined && typeof name !== "string") {
+        return res.status(400).json({ message: "Name must be a string" });
+      }
+
+      if (password !== undefined && typeof password !== "string") {
+        return res.status(400).json({ message: "Password must be a string" });
+      }
+
+      const normalizedEmail = normalizeEmail(email);
+
+      const existingUser = await userService.findUserByEmail(normalizedEmail);
+      if (existingUser) {
+        return res.status(409).json({ message: "Email already exists" });
+      }
+
+      const created = await userService.createUser({
+        ...req.body,
+        email: normalizedEmail,
+      });
+
+      return res.status(201).json(created);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      return res.status(500).json({ message: "Failed to create user" });
     }
-
-    return res.json(user);
   }
 
-  async deleteUser(req: Request<{ id: string }>, res: Response) {
-    const success = await userService.deleteUser(req.params.id);
+  // ================= UPDATE USER =================
+  async updateUser(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
 
-    if (!success) {
-      return res.status(404).json({ message: "User not found" });
+      const id = String(req.params.id);
+
+      if (!isUuid(id)) {
+        return res.status(400).json({ message: "Invalid user id" });
+      }
+
+      const targetUser = await userService.getUserById(id);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (req.user.role !== RoleName.ADMIN) {
+        const me = await userService.getUserById(req.user.id);
+
+        if (!me || me.departmentId !== targetUser.departmentId) {
+          return res.status(403).json({
+            message: "You can only update users from your department",
+          });
+        }
+      }
+
+      if (req.body?.email !== undefined) {
+        if (!isEmail(req.body.email)) {
+          return res.status(400).json({ message: "Invalid email" });
+        }
+        req.body.email = normalizeEmail(req.body.email);
+      }
+
+      const updatedUser = await userService.updateUser(id, req.body);
+
+      return res.status(200).json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      return res.status(500).json({ message: "Failed to update user" });
+    }
+  }
+
+  // ================= DELETE USER =================
+  async deleteUser(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const id = String(req.params.id);
+
+      if (!isUuid(id)) {
+        return res.status(400).json({ message: "Invalid user id" });
+      }
+
+      const success = await userService.deleteUser(id);
+
+      if (!success) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.status(200).json({
+        message: "User deleted successfully",
+      });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      return res.status(500).json({ message: "Failed to delete user" });
+    }
+  }
+
+  // ================= UPDATE MY PROFILE =================
+async updateMyProfile(req: AuthRequest, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
-    return res.status(200).json({ message: "User deleted successfully" });
+    const { name } = req.body ?? {};
+
+    if (name === undefined) {
+      return res.status(400).json({ message: "Name is required" });
+    }
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 60) {
+      return res.status(400).json({ message: "Name must be a valid string" });
+    }
+
+    const updated = await userService.updateMyProfile(req.user.id, {
+      name: name.trim(),
+    });
+
+    return res.status(200).json(updated);
+  } catch (error) {
+    console.error("Error updating my profile:", error);
+    return res.status(500).json({ message: "Failed to update profile" });
   }
+}
+
+   // ================= GET UNASSIGNED USERS =================
+async getUnassignedUsers(req: AuthRequest, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    // Only ADMIN and MANAGER can see assignable users
+    if (
+      req.user.role !== RoleName.ADMIN &&
+      req.user.role !== RoleName.MANAGER
+    ) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const users = await userService.getUnassignedUsers();
+
+    return res.status(200).json({ data: users });
+  } catch (error) {
+    console.error("Error fetching unassigned users:", error);
+    return res.status(500).json({ message: "Failed to fetch users" });
+  }
+}
 }

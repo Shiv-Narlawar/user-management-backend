@@ -1,30 +1,20 @@
 import { AppDataSource } from "../config/data-source";
 import { Permission } from "../entities/permission.entity";
+import { PermissionName } from "../constants/permission-name";
 
 export const seedPermissions = async () => {
-  const permissionRepo = AppDataSource.getRepository(Permission);
+  const repo = AppDataSource.getRepository(Permission);
 
-  const permissions = [
-    "USER_VIEW",
-    "USER_CREATE",
-    "USER_UPDATE",
-    "USER_DELETE",
-    "ROLE_CREATE",
-    "ROLE_UPDATE",
-    "PERMISSION_ASSIGN"
-  ];
+  const permissions = Object.values(PermissionName);
 
-  for (const permName of permissions) {
-    const existing = await permissionRepo.findOne({
-      where: { name: permName },
-    });
+  for (const name of permissions) {
+    const exists = await repo.findOne({ where: { name } });
 
-    if (!existing) {
-      const permission = permissionRepo.create({ name: permName });
-      await permissionRepo.save(permission);
-      console.log(`Permission ${permName} created`);
-    } else {
-      console.log(`Permission ${permName} already exists`);
+    if (!exists) {
+      await repo.save(repo.create({ name }));
+      console.log("Seeded permission:", name);
     }
   }
+
+  console.log("Permissions seeding completed.");
 };

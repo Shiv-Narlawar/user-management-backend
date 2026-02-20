@@ -9,11 +9,12 @@ import {
 
 import { AppDataSource } from "../../config/data-source";
 import { User, UserStatus } from "../../entities/user.entity";
-import { Role } from "../../entities/role.entity";
+import { Role, RoleName } from "../../entities/role.entity";
 import { RefreshToken } from "../../entities/refresh-token.entity";
 
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { ApiError } from "../../utils/apiError";
 
 export class LocalAuthService implements AuthService {
   private userRepo = AppDataSource.getRepository(User);
@@ -26,40 +27,54 @@ export class LocalAuthService implements AuthService {
 
   private validatePassword(password: string) {
     if (!password || password.trim().length < 8) {
-      throw new Error("Password must be at least 8 characters long");
+      throw new ApiError(400, "Password must be at least 8 characters long");
     }
   }
 
   
-     //SIGNUP
-  
+    // SIGNUP
+
   async signup(
     name: string,
     email: string,
     password: string,
-    roleName: string
+    roleName: RoleName
   ): Promise<AuthResponse> {
-    if (!name?.trim()) throw new Error("Name is required");
-    if (!email?.trim()) throw new Error("Email is required");
+    if (!name?.trim()) throw new ApiError(400, "Name is required");
+    if (!email?.trim()) throw new ApiError(400, "Email is required");
 
     this.validatePassword(password);
 
-    const allowedRoles = ["USER", "MANAGER"];
+    const allowedRoles: RoleName[] = [RoleName.USER, RoleName.MANAGER];
+
     if (!allowedRoles.includes(roleName)) {
-      throw new Error("Invalid role selection");
+      throw new ApiError(400, "Invalid role selection");
     }
 
-    const existingUser = await this.userRepo.findOne({ where: { email } });
-    if (existingUser) throw new Error("User already exists");
+    const normalizedEmail = email.trim().toLowerCase();
 
-    const role = await this.roleRepo.findOne({ where: { name: roleName } });
-    if (!role) throw new Error("Invalid role");
+    const existingUser = await this.userRepo
+      .createQueryBuilder("user")
+      .where("LOWER(user.email) = :email", { email: normalizedEmail })
+      .andWhere("user.deletedAt IS NULL")
+      .getOne();
+
+    if (existingUser) {
+      throw new ApiError(409, "User already exists");
+    }
+
+    const role = await this.roleRepo.findOne({
+      where: { name: roleName },
+      relations: ["permissions"],
+    });
+
+    if (!role) throw new ApiError(400, "Invalid role");
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = this.userRepo.create({
-      name,
-      email,
+      name: name.trim(),
+      email: normalizedEmail,
       password: hashedPassword,
       role,
       status: UserStatus.ACTIVE,
@@ -67,43 +82,81 @@ export class LocalAuthService implements AuthService {
 
     const savedUser = await this.userRepo.save(newUser);
 
+    const permissions = (role.permissions || []).map((p) => p.name);
+
+    const refreshRecord = this.refreshRepo.create({
+      user: savedUser,
+      tokenHash: "PENDING",
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    const savedRefresh = await this.refreshRepo.save(refreshRecord);
+
+    const accessToken = signAccessToken({
+      id: savedUser.id,
+      email: savedUser.email,
+      role: role.name,
+      permissions,
+    });
+
+    const refreshToken = signRefreshToken({
+      id: savedUser.id,
+      jti: savedRefresh.id,
+    });
+
+    savedRefresh.tokenHash = this.hashToken(refreshToken);
+    await this.refreshRepo.save(savedRefresh);
+
     return {
       message: "User registered successfully",
+      token: accessToken,
+      refreshToken,
       user: {
         id: savedUser.id,
         name: savedUser.name,
         email: savedUser.email,
-        role: savedUser.role.name,
+        role: role.name,
         status: savedUser.status,
+        permissions,
       },
     };
   }
 
+ 
+    // LOGIN
   
-     //LOGIN
   async login(email: string, password: string): Promise<AuthResponse> {
     if (!email?.trim() || !password) {
-      throw new Error("Email and password are required");
+      throw new ApiError(400, "Email and password are required");
     }
+
+    const normalizedEmail = email.trim().toLowerCase();
 
     const user = await this.userRepo
       .createQueryBuilder("user")
       .addSelect("user.password")
       .leftJoinAndSelect("user.role", "role")
       .leftJoinAndSelect("role.permissions", "permission")
-      .where("user.email = :email", { email })
+      .where("LOWER(user.email) = :email", { email: normalizedEmail })
+      .andWhere("user.deletedAt IS NULL")
       .getOne();
 
-    if (!user) throw new Error("Invalid email or password");
-    if (user.status !== UserStatus.ACTIVE)
-      throw new Error("Account is inactive");
+    if (!user) {
+      throw new ApiError(401, "Invalid email or password");
+    }
+
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new ApiError(403, "Account is inactive");
+    }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) throw new Error("Invalid email or password");
 
-    const permissions = (user.role.permissions || []).map(p => p.name);
+    if (!isMatch) {
+      throw new ApiError(401, "Invalid email or password");
+    }
 
-    // Create refresh token record
+    const permissions = (user.role?.permissions || []).map((p) => p.name);
+
     const refreshRecord = this.refreshRepo.create({
       user,
       tokenHash: "PENDING",
@@ -115,7 +168,7 @@ export class LocalAuthService implements AuthService {
     const accessToken = signAccessToken({
       id: user.id,
       email: user.email,
-      role: user.role.name,
+      role: user.role?.name ?? RoleName.USER,
       permissions,
     });
 
@@ -134,20 +187,63 @@ export class LocalAuthService implements AuthService {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role.name,
+        role: user.role?.name ?? RoleName.USER,
         status: user.status,
         permissions,
       },
     };
   }
 
+  
+    // UPDATE PASSWORD
+ 
 
-     //REFRESH
+  async updatePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<AuthResponse> {
+    if (!userId) throw new ApiError(400, "User id is required");
+
+    this.validatePassword(newPassword);
+
+    const user = await this.userRepo
+      .createQueryBuilder("user")
+      .addSelect("user.password")
+      .where("user.id = :id", { id: userId })
+      .andWhere("user.deletedAt IS NULL")
+      .getOne();
+
+    if (!user) throw new ApiError(404, "User not found");
+
+    const ok = await bcrypt.compare(currentPassword, user.password);
+
+    if (!ok) throw new ApiError(400, "Current password is incorrect");
+
+    user.password = await bcrypt.hash(newPassword, 10);
+
+    await this.userRepo.save(user);
+
+    await this.refreshRepo
+      .createQueryBuilder()
+      .update(RefreshToken)
+      .set({ revokedAt: new Date() })
+      .where("userId = :userId AND revokedAt IS NULL", { userId })
+      .execute();
+
+    return { message: "Password updated successfully" };
+  }
+
+  
+    // REFRESH TOKEN
+  
+
   async refresh(refreshToken: string): Promise<AuthResponse> {
-    if (!refreshToken) throw new Error("Refresh token is required");
+    if (!refreshToken) throw new ApiError(400, "Refresh token is required");
 
     const payload = verifyRefreshToken(refreshToken);
-    if (!payload) throw new Error("Invalid refresh token");
+
+    if (!payload) throw new ApiError(401, "Invalid refresh token");
 
     const tokenHash = this.hashToken(refreshToken);
 
@@ -156,20 +252,20 @@ export class LocalAuthService implements AuthService {
       relations: ["user", "user.role", "user.role.permissions"],
     });
 
-    if (!record) throw new Error("Invalid refresh token");
-    if (record.revokedAt) throw new Error("Refresh token revoked");
-    if (record.expiresAt < new Date())
-      throw new Error("Refresh token expired");
-    if (record.tokenHash !== tokenHash)
-      throw new Error("Invalid refresh token");
+    if (!record || record.tokenHash !== tokenHash) {
+      throw new ApiError(401, "Invalid refresh token");
+    }
+
+    if (record.revokedAt) throw new ApiError(401, "Refresh token revoked");
+
+    if (record.expiresAt < new Date()) {
+      throw new ApiError(401, "Refresh token expired");
+    }
 
     const user = record.user;
-    if (user.status !== UserStatus.ACTIVE)
-      throw new Error("Account is inactive");
 
-    const permissions = (user.role.permissions || []).map(p => p.name);
+    const permissions = (user.role?.permissions || []).map((p) => p.name);
 
-    // Rotate token
     record.revokedAt = new Date();
     await this.refreshRepo.save(record);
 
@@ -187,12 +283,13 @@ export class LocalAuthService implements AuthService {
     });
 
     savedNew.tokenHash = this.hashToken(newRefreshToken);
+
     await this.refreshRepo.save(savedNew);
 
     const newAccessToken = signAccessToken({
       id: user.id,
       email: user.email,
-      role: user.role.name,
+      role: user.role?.name ?? RoleName.USER,
       permissions,
     });
 
@@ -203,27 +300,29 @@ export class LocalAuthService implements AuthService {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role.name,
+        role: user.role?.name ?? RoleName.USER,
         status: user.status,
         permissions,
       },
     };
   }
 
+ 
+    // LOGOUT
   
-     //LOGOUT
 
   async logout(refreshToken: string): Promise<AuthResponse> {
-    if (!refreshToken) throw new Error("Refresh token is required");
+    if (!refreshToken) throw new ApiError(400, "Refresh token required");
 
     const payload = verifyRefreshToken(refreshToken);
-    if (!payload) throw new Error("Invalid refresh token");
+
+    if (!payload) throw new ApiError(401, "Invalid refresh token");
 
     const record = await this.refreshRepo.findOne({
       where: { id: payload.jti },
     });
 
-    if (record && !record.revokedAt) {
+    if (record) {
       record.revokedAt = new Date();
       await this.refreshRepo.save(record);
     }
@@ -232,79 +331,69 @@ export class LocalAuthService implements AuthService {
   }
 
   
-     //FORGOT PASSWORD
-  
+    // FORGOT PASSWORD
+ 
+
   async forgotPassword(email: string): Promise<AuthResponse> {
-    if (!email?.trim()) throw new Error("Email is required");
+    if (!email?.trim()) throw new ApiError(400, "Email is required");
 
-    const user = await this.userRepo.findOne({ where: { email } });
-    if (!user) throw new Error("User not found");
+    const user = await this.userRepo.findOne({
+      where: { email: email.trim().toLowerCase() },
+    });
 
-    const resetCode = crypto.randomInt(100000, 999999).toString();
+    if (!user) throw new ApiError(404, "User not found");
 
-    user.resetCode = resetCode;
-    user.resetCodeExpiry = new Date(Date.now() + 10 * 60 * 1000);
-
-    await this.userRepo.save(user);
-
-    return { message: "Reset code generated" };
+    return { message: "Email verified. Proceed to reset password." };
   }
 
-
-     //RESET PASSWORD
   
+    // RESET PASSWORD
+ 
+
   async resetPassword(
     email: string,
-    code: string,
+    _code: string,
     newPassword: string
   ): Promise<AuthResponse> {
-    if (!email?.trim() || !code?.trim())
-      throw new Error("Email and code are required");
+    if (!email?.trim()) throw new ApiError(400, "Email required");
 
     this.validatePassword(newPassword);
 
-    const user = await this.userRepo.findOne({ where: { email } });
-    if (!user) throw new Error("User not found");
+    const user = await this.userRepo.findOne({
+      where: { email: email.trim().toLowerCase() },
+    });
 
-    if (
-      user.resetCode !== code ||
-      !user.resetCodeExpiry ||
-      user.resetCodeExpiry < new Date()
-    ) {
-      throw new Error("Invalid or expired reset code");
-    }
+    if (!user) throw new ApiError(404, "User not found");
 
     user.password = await bcrypt.hash(newPassword, 10);
-    user.resetCode = undefined;
-    user.resetCodeExpiry = undefined;
 
     await this.userRepo.save(user);
 
-    // Revoke all refresh tokens on password reset
     await this.refreshRepo
       .createQueryBuilder()
       .update(RefreshToken)
       .set({ revokedAt: new Date() })
-      .where("userId = :userId AND revokedAt IS NULL", { userId: user.id })
+      .where("userId = :userId", { userId: user.id })
       .execute();
 
-    return { message: "Password reset successful" };
+    return { message: "Password updated successfully" };
   }
 
   
-     //FORGOT USERNAME
-  
-  async forgotUsername(email: string): Promise<AuthResponse> {
-    if (!email?.trim()) throw new Error("Email is required");
+    // FORGOT USERNAME
 
-    const user = await this.userRepo.findOne({ where: { email } });
-    if (!user) throw new Error("User not found");
+  async forgotUsername(email: string): Promise<AuthResponse> {
+    const user = await this.userRepo.findOne({
+      where: { email: email.trim().toLowerCase() },
+    });
+
+    if (!user) throw new ApiError(404, "User not found");
 
     return { message: `Your username is ${user.name}` };
   }
 
   
-     //VALIDATE ACCESS TOKEN
+    // VALIDATE TOKEN
 
   async validate(token: string): Promise<AccessPayload | null> {
     return verifyAccessToken(token);

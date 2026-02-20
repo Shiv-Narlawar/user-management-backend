@@ -1,15 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToMany, } from "typeorm";
-
+import { Entity, Column, ManyToMany } from "typeorm";
 import { Role } from "./role.entity";
+import { AppBaseEntity } from "./base.entity";
 
 @Entity()
-export class Permission {
-  @PrimaryGeneratedColumn("uuid")
-  id!: string;
-
- @Column({ unique: true })
+export class Permission extends AppBaseEntity {
+  @Column({ unique: true })
   name!: string;
-
 
   @ManyToMany(() => Role, (role) => role.permissions)
   roles!: Role[];

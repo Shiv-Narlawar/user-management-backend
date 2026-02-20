@@ -1,20 +1,27 @@
-import { RequestHandler } from "express";
-import { AuthenticatedRequest } from "./auth.middleware";
+import type { RequestHandler } from "express";
+import { AuthRequest } from "../types/auth-request";
+import { PermissionName } from "../constants/permission-name";
 
-export const authorize = (requiredPermission: string): RequestHandler => {
+export const authorize = (
+  requiredPermission: PermissionName
+): RequestHandler => {
   return (req, res, next) => {
-    const user = (req as AuthenticatedRequest).user;
+    const user = (req as AuthRequest).user;
 
     if (!user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    if (!user.permissions?.includes(requiredPermission)) {
-      return res
-        .status(403)
-        .json({ message: `Permission ${requiredPermission} required` });
+    if (!Array.isArray(user.permissions)) {
+      return res.status(403).json({ message: "Forbidden" });
     }
 
-    next();
+    if (!user.permissions.includes(requiredPermission)) {
+      return res.status(403).json({
+        message: "You are not permitted to perform this action",
+      });
+    }
+
+    return next();
   };
 };
