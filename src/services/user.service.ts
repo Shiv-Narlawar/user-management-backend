@@ -1,54 +1,34 @@
-import { User } from "../models/user.model";
-
-const users: User[] = [
-  {
-    id: "1",
-    name: "Admin User",
-    email: "admin@test.com",
-    password: "123456",
-    role: "admin",
-    status: "ACTIVE"
-  }
-];
-
+import { AppDataSource } from "../config/data-source";
+import { User } from "../entities/user.entity";
 
 export class UserService {
-  getAllUsers(): User[] {
-    return users;
-  }
-  
-  getUserById(id: string): User | undefined {
-    return users.find(user => user.id === id);
-  }
-  
-  createUser(userData: Omit<User, "id">): User {
-  const newUser: User = {
-    id: Date.now().toString(),
-    ...userData,
-  };
+  private userRepository = AppDataSource.getRepository(User);
 
-  users.push(newUser);
-  return newUser;
-}
-
-
-  updateUser(id: string, updatedData: Partial<User>): User | undefined {
-    const user = users.find(u => u.id === id);
-    if (!user) return undefined;
-
-    Object.assign(user, updatedData);
-    return user;
+  async getAllUsers() {
+    return await this.userRepository.find({
+      relations: ["role", "applications"],
+    });
   }
 
-  deleteUser(id: string): boolean {
-  const index = users.findIndex(user => user.id === id);
-
-  if (index === -1) {
-    return false;
+  async getUserById(id: string) {
+    return await this.userRepository.findOne({
+      where: { id },
+      relations: ["role"],
+    });
   }
 
-  users.splice(index, 1);
-  return true;
-}
+  async createUser(data: Partial<User>) {
+    const user = this.userRepository.create(data);
+    return await this.userRepository.save(user);
+  }
 
+  async updateUser(id: string, data: Partial<User>) {
+    await this.userRepository.update(id, data);
+    return await this.getUserById(id);
+  }
+
+  async deleteUser(id: string) {
+    const result = await this.userRepository.softDelete(id);
+    return result.affected !== 0;
+  }
 }

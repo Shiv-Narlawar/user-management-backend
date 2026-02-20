@@ -308,10 +308,158 @@ Authorization: Bearer <your-jwt-token>
 
 ---
 
+
+
 ## Before You Push Code
 
 Make sure all tests pass:
 ```bash
 npm test
+```
+
+---
+
+##  Database Schema Design
+
+The application uses **TypeORM** with **PostgreSQL** for database management. The schema includes the following core entities:
+
+### Entity Relationships
+
+```
+User
+├── id (UUID, primary key)
+├── name (string)
+├── email (string, unique)
+├── password (string, encrypted)
+├── status (enum: active, inactive)
+├── roles (many-to-many relationship)
+├── permissions (many-to-many relationship)
+├── createdAt (timestamp)
+└── updatedAt (timestamp)
+
+Role
+├── id (UUID, primary key)
+├── name (string, unique)
+├── description (string)
+├── permissions (many-to-many relationship)
+├── createdAt (timestamp)
+└── updatedAt (timestamp)
+
+Permission
+├── id (UUID, primary key)
+├── name (string, unique)
+├── description (string)
+├── createdAt (timestamp)
+└── updatedAt (timestamp)
+
+Application
+├── id (UUID, primary key)
+├── name (string)
+├── description (string)
+├── status (enum: active, inactive)
+├── createdAt (timestamp)
+└── updatedAt (timestamp)
+```
+
+### Key Features
+
+- **Timestamps**: All entities include `createdAt` and `updatedAt` for audit trails
+- **UUIDs**: Primary keys use UUID for distributed system compatibility
+- **Enums**: Status fields use enums for type safety
+- **Relationships**: Support for one-to-many and many-to-many relationships
+
+---
+
+## Generating Migrations
+
+TypeORM migrations allow you to version control your database schema changes. Follow these steps to generate and run migrations:
+
+### Generate a New Migration
+
+After modifying entities, generate a migration file automatically:
+
+```bash
+npm run migration:generate
+```
+
+This command:
+- Analyzes your entity definitions
+- Detects schema changes
+- Creates a new migration file in `src/migrations/`
+- Names the file with a timestamp (e.g., `1771322673418-Init.ts`)
+
+### Custom Migration Names
+
+To generate a migration with a specific name:
+
+```bash
+npm run migration:generate -- NameOfMigration
+```
+
+Example:
+```bash
+npm run migration:generate -- AddUserStatusColumn
+```
+
+### Apply Pending Migrations
+
+Run all pending migrations against your database:
+
+```bash
+npm run migration:run
+```
+
+**Before running migrations:**
+- Ensure database connection is configured in `src/config/data-source.ts`
+- Make sure your database is running and accessible
+- Verify PostgreSQL connection details match your environment
+
+### Revert the Last Migration
+
+Undo the last applied migration:
+
+```bash
+npm run migration:revert
+```
+
+---
+
+## Repository Pattern
+
+Repositories provide a clean abstraction for database operations. They handle entity-specific queries and business logic.
+
+### Using Repositories
+
+#### Example: User Repository
+
+```typescript
+import { AppDataSource } from "./config/data-source";
+import { User } from "./entities/user.entity";
+
+const userRepository = AppDataSource.getRepository(User);
+
+// Find all users
+const allUsers = await userRepository.find();
+
+// Find user by ID
+const user = await userRepository.findOneBy({ id: userId });
+
+// Find user by email
+const userByEmail = await userRepository.findOneBy({ email: "user@example.com" });
+
+// Create and save a user
+const newUser = userRepository.create({
+    name: "John Doe",
+    email: "john@example.com",
+    password: "hashedPassword"
+});
+await userRepository.save(newUser);
+
+// Update a user
+user.name = "Jane Doe";
+await userRepository.save(user);
+
+// Delete a user
+await userRepository.remove(user);
 ```
 
