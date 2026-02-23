@@ -17,14 +17,24 @@ export class UserService {
     });
   }
 
+  async findUserByEmail(email: string) {
+    return await this.userRepository.findOne({
+      where: { email },
+    });
+  }
+
   async createUser(data: Partial<User>) {
     const user = this.userRepository.create(data);
     return await this.userRepository.save(user);
   }
 
   async updateUser(id: string, data: Partial<User>) {
-    await this.userRepository.update(id, data);
-    return await this.getUserById(id);
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) {
+      return null;
+    }
+    Object.assign(user, data);
+    return await this.userRepository.save(user); // returns updated entity directly
   }
 
   async deleteUser(id: string) {

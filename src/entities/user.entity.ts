@@ -3,14 +3,13 @@ import {
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
-  OneToMany,
   Index,
   CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
 } from "typeorm";
 import { Role } from "./role.entity";
-import { Application } from "./application.entity";
+
 
 @Entity()
 export class User {
@@ -42,6 +41,4 @@ export class User {
   @ManyToOne(() => Role, (role) => role.users)
   role!: Role;
 
-  @OneToMany(() => Application, (app) => app.user)
-  applications!: Application[];
 }

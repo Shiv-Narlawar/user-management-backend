@@ -5,7 +5,7 @@ import { DataSource } from "typeorm";
 import { User } from "../entities/user.entity";
 import { Role } from "../entities/role.entity";
 import { Permission } from "../entities/permission.entity";
-import { Application } from "../entities/application.entity";
+
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -18,6 +18,6 @@ export const AppDataSource = new DataSource({
   synchronize: false,
   logging: false,
 
-  entities: [User, Role, Permission, Application],
-  migrations: ["dist/src/migrations/*.js"],
+  entities: [User, Role, Permission],
+  migrations: ["src/migrations/*.ts"],
 });

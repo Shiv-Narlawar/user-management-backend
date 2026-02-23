@@ -5,6 +5,8 @@ import {
   ManyToMany,
   JoinTable,
   OneToMany,
+  UpdateDateColumn,
+  CreateDateColumn,
 } from "typeorm";
 import { Permission } from "./permission.entity";
 import { User } from "./user.entity";
@@ -16,6 +18,13 @@ export class Role {
 
   @Column()
   name!: string;
+
+  @CreateDateColumn()
+    createdAt!: Date;
+  
+  @UpdateDateColumn()
+    updatedAt!: Date;
+  
 
   @ManyToMany(() => Permission)
   @JoinTable()

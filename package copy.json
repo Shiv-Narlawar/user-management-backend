@@ -8,9 +8,9 @@
     "build": "tsc",
     "start": "node dist/src/server.js",
     "test": "jest",
-    "migration:generate:dev": "typeorm-ts-node-commonjs -d src/config/data-source.ts migration:generate src/migrations/Init",
-    "migration:run:dev": "typeorm-ts-node-commonjs -d src/config/data-source.ts migration:run",
-    "migration:revert:dev": "typeorm-ts-node-commonjs -d src/config/data-source.ts migration:revert"
+    "migration:run": "node ./node_modules/typeorm/cli.js migration:run -d dist/src/config/data-source.js",
+    "migration:revert": "node ./node_modules/typeorm/cli.js migration:revert -d dist/src/config/data-source.js",
+    "migration:generate": "node ./node_modules/typeorm/cli.js migration:generate dist/src/migrations/Init -d dist/src/config/data-source.js"
   },
   "repository": {
     "type": "git",
