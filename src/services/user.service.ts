@@ -28,7 +28,7 @@ export class UserService {
   }
 
   async deleteUser(id: string) {
-    const result = await this.userRepository.softDelete(id);
+    const result = await this.userRepository.delete(id);
     return result.affected !== 0;
   }
 }
