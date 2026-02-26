@@ -26,6 +26,7 @@ services:
       DB_USER: postgres
       DB_PASSWORD: shivamngenux
       DB_NAME: user_management
+      NODE_ENV: production
     ports:
       - "7000:7000"
 
