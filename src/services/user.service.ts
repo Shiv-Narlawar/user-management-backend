@@ -6,7 +6,7 @@ export class UserService {
 
   async getAllUsers() {
     return await this.userRepository.find({
-      relations: ["role", "applications"],
+      relations: ["role"],
     });
   }
 
