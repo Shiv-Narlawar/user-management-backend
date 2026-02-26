@@ -10,6 +10,10 @@ import {
 } from "typeorm";
 import { Role } from "./role.entity";
 
+export enum UserStatus {
+  ACTIVE = "ACTIVE",
+  INACTIVE = "INACTIVE",
+}
 
 @Entity()
 export class User {
@@ -23,11 +27,15 @@ export class User {
   @Column()
   email!: string;
 
-  @Column()
+  @Column({ select: false })
   password!: string;
 
-  @Column()
-  status!: string;
+  @Column({
+    type: "enum",
+    enum: UserStatus,
+    default: UserStatus.ACTIVE,
+  })
+  status!: UserStatus;
 
   @CreateDateColumn()
   createdAt!: Date;
@@ -38,7 +46,13 @@ export class User {
   @DeleteDateColumn()
   deletedAt?: Date;
 
-  @ManyToOne(() => Role, (role) => role.users)
+  @Index()
+  @ManyToOne(() => Role, (role) => role.users, { eager: true })
   role!: Role;
 
+  @Column({ nullable: true })
+  resetCode?: string;
+
+  @Column({ type: "timestamp", nullable: true })
+  resetCodeExpiry?: Date;
 }

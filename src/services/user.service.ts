@@ -34,7 +34,7 @@ export class UserService {
       return null;
     }
     Object.assign(user, data);
-    return await this.userRepository.save(user); // returns updated entity directly
+    return await this.userRepository.save(user); // returns updated entity directly  
   }
 
   async deleteUser(id: string) {

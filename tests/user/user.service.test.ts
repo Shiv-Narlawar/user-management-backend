@@ -1,5 +1,6 @@
 import { UserService } from "../../src/services/user.service";
 import { AppDataSource } from "../../src/config/data-source";
+import { User } from "../../src/entities/user.entity";
 
 jest.mock("../../src/config/data-source", () => ({
   AppDataSource: {
