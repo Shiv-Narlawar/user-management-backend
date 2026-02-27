@@ -2,6 +2,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
+  OneToMany,
   ManyToOne,
   Index,
   CreateDateColumn,
@@ -9,6 +10,7 @@ import {
   DeleteDateColumn,
 } from "typeorm";
 import { Role } from "./role.entity";
+import { RefreshToken } from "./refresh-token.entity";
 
 export enum UserStatus {
   ACTIVE = "ACTIVE",
@@ -24,7 +26,7 @@ export class User {
   name!: string;
 
   @Index({ unique: true })
-  @Column()
+  @Column() 
   email!: string;
 
   @Column({ select: false })
@@ -47,11 +49,14 @@ export class User {
   deletedAt?: Date;
 
   @Index()
-  @ManyToOne(() => Role, (role) => role.users, { eager: true })
+  @ManyToOne(() => Role, (role) => role.users)
   role!: Role;
 
   @Column({ nullable: true })
   resetCode?: string;
+
+  @OneToMany(() => RefreshToken, (rt) => rt.user)
+ refreshTokens!: RefreshToken[];
 
   @Column({ type: "timestamp", nullable: true })
   resetCodeExpiry?: Date;

@@ -6,6 +6,9 @@ function mapErrorToStatus(message: string): number {
 
   // auth failures
   if (msg.includes("invalid email or password")) return 401;
+  if (msg.includes("invalid refresh token")) return 401;
+  if (msg.includes("refresh token revoked")) return 401;
+  if (msg.includes("refresh token expired")) return 401;
 
   // conflicts
   if (msg.includes("already exists")) return 409;
@@ -72,6 +75,40 @@ export class AuthController {
     }
   };
 
+  //refresh access token using refresh token
+  refresh = async (req: Request, res: Response) => {
+    try {
+      const { refreshToken } = req.body as { refreshToken?: string };
+
+      if (!refreshToken) {
+        return res.status(400).json({ message: "Refresh token is required" });
+      }
+
+      const result = await this.authService.refresh(refreshToken);
+      return res.status(200).json(result);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Refresh failed";
+      return res.status(mapErrorToStatus(message)).json({ message });
+    }
+  };
+
+  //logout (revoke refresh token)
+  logout = async (req: Request, res: Response) => {
+    try {
+      const { refreshToken } = req.body as { refreshToken?: string };
+
+      if (!refreshToken) {
+        return res.status(400).json({ message: "Refresh token is required" });
+      }
+
+      const result = await this.authService.logout(refreshToken);
+      return res.status(200).json(result);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Logout failed";
+      return res.status(mapErrorToStatus(message)).json({ message });
+    }
+  };
+
   forgotPassword = async (req: Request, res: Response) => {
     try {
       const { email } = req.body as { email?: string };
@@ -103,7 +140,11 @@ export class AuthController {
         });
       }
 
-      const result = await this.authService.resetPassword(email, code, newPassword);
+      const result = await this.authService.resetPassword(
+        email,
+        code,
+        newPassword
+      );
       return res.status(200).json(result);
     } catch (error: unknown) {
       const message =

@@ -7,6 +7,7 @@ import { DataSource } from "typeorm";
 import { User } from "../entities/user.entity";
 import { Role } from "../entities/role.entity";
 import { Permission } from "../entities/permission.entity";
+import { RefreshToken } from "../entities/refresh-token.entity";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -21,10 +22,9 @@ export const AppDataSource = new DataSource({
   synchronize: false,
   logging: false,
 
-  // In prod we run compiled JS from dist; in dev we use TS sources.
   entities: isProd
     ? ["dist/src/entities/*.js"]
-    : [User, Role, Permission],
+    : [User, Role, Permission, RefreshToken],
 
   migrations: isProd
     ? ["dist/src/migrations/*.js"]
