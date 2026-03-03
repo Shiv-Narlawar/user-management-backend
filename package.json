@@ -5,7 +5,14 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
-    "test": "jest"
+    "build": "tsc",
+    "start": "node dist/src/server.js",
+    "test": "jest",
+    "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
+    "migration:generate:dev": "typeorm-ts-node-commonjs -d src/config/data-source.ts migration:generate ./src/migrations/Init -p",
+    "migration:run:dev": "typeorm-ts-node-commonjs -d src/config/data-source.ts migration:run",
+    "migration:run": "node ./node_modules/typeorm/cli.js migration:run -d dist/src/config/data-source.js",
+    "migration:revert:dev": "typeorm-ts-node-commonjs -d src/config/data-source.ts migration:revert"
   },
   "repository": {
     "type": "git",
@@ -21,22 +28,29 @@
   "homepage": "https://github.com/Shiv-Narlawar/user-management-backend#readme",
   "dependencies": {
     "axios": "^1.13.5",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
-    "dotenv": "^17.2.4",
+    "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.18.0",
+    "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^25.2.0",
+    "@types/node": "^25.3.0",
     "jest": "^29.7.0",
     "nodemon": "^3.1.11",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typeorm": "^0.3.28",
+    "typeorm-ts-node-commonjs": "^0.3.20",
     "typescript": "^5.9.3"
   }
 }

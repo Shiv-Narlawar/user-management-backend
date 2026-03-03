@@ -1,11 +1,37 @@
-import { User } from "../../models/user.model";
+import type { AccessPayload } from "./jwt";
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status?: string;
+  permissions?: string[];
+}
 
 export interface AuthResponse {
-  token: string;
-  user: Omit<User, "password">;
+  token?: string;
+  refreshToken?: string;
+  user?: AuthUser;
+  message?: string;
 }
 
 export interface AuthService {
   login(email: string, password: string): Promise<AuthResponse>;
-  validate(token: string): Promise<boolean>;
+
+  signup(
+    name: string,
+    email: string,
+    password: string,
+    role: string
+  ): Promise<AuthResponse>;
+
+  forgotPassword(email: string): Promise<AuthResponse>;
+  resetPassword(email: string, code: string, newPassword: string): Promise<AuthResponse>;
+  forgotUsername(email: string): Promise<AuthResponse>;
+
+  refresh(refreshToken: string): Promise<AuthResponse>;
+  logout(refreshToken: string): Promise<AuthResponse>;
+
+  validate(token: string): Promise<AccessPayload | null>;
 }

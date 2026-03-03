@@ -4,45 +4,62 @@ import { UserService } from "../services/user.service";
 const userService = new UserService();
 
 export class UserController {
-  getUsers(req: Request, res: Response) {
-    res.json(userService.getAllUsers());
+  async getUsers(req: Request, res: Response) {
+    const users = await userService.getAllUsers();
+    return res.json(users);
   }
 
-  getUser(req: Request<{ id: string }>, res: Response) {
+  async getUser(req: Request<{ id: string }>, res: Response) {
     const { id } = req.params;
-    const user = userService.getUserById(id);
+
+    const user = await userService.getUserById(id);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json(user);
+    return res.json(user);
   }
 
-  createUser(req: Request, res: Response) {
-    const user = userService.createUser(req.body);
-    res.status(201).json(user);
+  async createUser(req: Request, res: Response) {
+    try {
+      // Check if email already exists
+      const existingUser = await userService.findUserByEmail(req.body.email);
+      if (existingUser) {
+        return res.status(400).json({
+          message: "Email already exists",
+        });
+      }
+
+      // Create new user
+      const user = await userService.createUser(req.body);
+      return res.status(201).json(user);
+    } catch (error: any) {
+      return res.status(500).json({
+        message: "Internal Server Error",
+      });
+    }
   }
 
-  updateUser(req: Request<{ id: string }>, res: Response) {
+  async updateUser(req: Request<{ id: string }>, res: Response) {
     const { id } = req.params;
-    const user = userService.updateUser(id, req.body);
+
+    const user = await userService.updateUser(id, req.body);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json(user);
+    return res.json(user);
   }
 
-  deleteUser(req: Request<{ id: string }>, res: Response) {
-  const success = userService.deleteUser(req.params.id);
- 
-  if (!success) {
-    return res.status(404).json({ message: "User not found" });
+  async deleteUser(req: Request<{ id: string }>, res: Response) {
+    const success = await userService.deleteUser(req.params.id);
+
+    if (!success) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({ message: "User deleted successfully" });
   }
-
-  return res.status(200).json({ message: "User deleted successfully" });
-}
-
 }

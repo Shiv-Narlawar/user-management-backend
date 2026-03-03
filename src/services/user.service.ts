@@ -1,54 +1,44 @@
-import { User } from "../models/user.model";
-
-const users: User[] = [
-  {
-    id: "1",
-    name: "Admin User",
-    email: "admin@test.com",
-    password: "123456",
-    role: "admin",
-    status: "ACTIVE"
-  }
-];
-
+import { AppDataSource } from "../config/data-source";
+import { User } from "../entities/user.entity";
 
 export class UserService {
-  getAllUsers(): User[] {
-    return users;
+  private userRepository = AppDataSource.getRepository(User);
+
+  async getAllUsers() {
+    return await this.userRepository.find({
+      relations: ["role"],
+    });
+  }
+
+  async getUserById(id: string) {
+    return await this.userRepository.findOne({
+      where: { id },
+      relations: ["role"],
+    });
+  }
+
+  async findUserByEmail(email: string) {
+    return await this.userRepository.findOne({
+      where: { email },
+    });
   }
   
-  getUserById(id: string): User | undefined {
-    return users.find(user => user.id === id);
-  }
-  
-  createUser(userData: Omit<User, "id">): User {
-  const newUser: User = {
-    id: Date.now().toString(),
-    ...userData,
-  };
-
-  users.push(newUser);
-  return newUser;
-}
-
-
-  updateUser(id: string, updatedData: Partial<User>): User | undefined {
-    const user = users.find(u => u.id === id);
-    if (!user) return undefined;
-
-    Object.assign(user, updatedData);
-    return user;
+  async createUser(data: Partial<User>) {
+    const user = this.userRepository.create(data);
+    return await this.userRepository.save(user);
   }
 
-  deleteUser(id: string): boolean {
-  const index = users.findIndex(user => user.id === id);
-
-  if (index === -1) {
-    return false;
+  async updateUser(id: string, data: Partial<User>) {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) {
+      return null;
+    }
+    Object.assign(user, data);
+    return await this.userRepository.save(user); // returns updated entity directly  
   }
 
-  users.splice(index, 1);
-  return true;
-}
-
+  async deleteUser(id: string) {
+    const result = await this.userRepository.delete(id);
+    return result.affected !== 0;
+  }
 }
