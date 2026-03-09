@@ -73,12 +73,13 @@ export class LocalAuthService implements AuthService {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = this.userRepo.create({
-      name: name.trim(),
-      email: normalizedEmail,
-      password: hashedPassword,
-      role,
-      status: UserStatus.ACTIVE,
-    });
+  name: name.trim(),
+  email: normalizedEmail,
+  password: hashedPassword,
+  role,
+  roleName: role.name, // ⭐ FIX: sync roleName with role
+  status: UserStatus.ACTIVE,
+});
 
     const savedUser = await this.userRepo.save(newUser);
 
