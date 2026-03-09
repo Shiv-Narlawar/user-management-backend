@@ -6,7 +6,7 @@ import { RoleName } from "../entities/role.entity";
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
 
-  //  GET ALL USERS 
+  // GET ALL USERS
   async getAllUsers(params?: {
     search?: string;
     departmentId?: string;
@@ -50,7 +50,7 @@ export class UserService {
     };
   }
 
-  //  GET USER BY ID 
+  // GET USER BY ID
   async getUserById(id: string) {
     return this.userRepository.findOne({
       where: { id, deletedAt: IsNull() },
@@ -60,42 +60,49 @@ export class UserService {
 
   // GET MANAGERS
   async getManagers() {
-  return this.userRepository
-    .createQueryBuilder("user")
-    .leftJoin("user.role", "role")
-    .where("role.name = :role", { role: RoleName.MANAGER })
-    .andWhere("user.deletedAt IS NULL")
-    .select([
-      "user.id",
-      "user.name",
-      "user.email",
-      "role.name"
-    ])
-    .orderBy("user.name", "ASC")
-    .getMany();
-}
+    return this.userRepository
+      .createQueryBuilder("user")
+      .leftJoin("user.role", "role")
+      .where("role.name = :role", { role: RoleName.MANAGER })
+      .andWhere("user.deletedAt IS NULL")
+      .select([
+        "user.id",
+        "user.name",
+        "user.email",
+        "role.name"
+      ])
+      .orderBy("user.name", "ASC")
+      .getMany();
+  }
 
-  //  FIND USER BY EMAIL 
+  // FIND USER BY EMAIL
   async findUserByEmail(email: string) {
     return this.userRepository.findOne({
       where: { email, deletedAt: IsNull() },
     });
   }
 
-  //  CREATE USER 
+  // CREATE USER
   async createUser(data: Partial<User>) {
     const { deletedAt, ...safe } = data as Partial<User> & {
       deletedAt?: unknown;
     };
 
     const user = this.userRepository.create(safe);
+
+    // 🔥 FIX: sync roleName with role relation
+    if (user.role) {
+      user.roleName = user.role.name;
+    }
+
     return this.userRepository.save(user);
   }
 
-  //  UPDATE USER 
+  // UPDATE USER
   async updateUser(id: string, data: Partial<User>) {
     const user = await this.userRepository.findOne({
       where: { id, deletedAt: IsNull() },
+      relations: ["role"],
     });
 
     if (!user) return null;
@@ -106,10 +113,15 @@ export class UserService {
 
     Object.assign(user, safe);
 
+    // 🔥 FIX: keep roleName in sync
+    if (user.role) {
+      user.roleName = user.role.name;
+    }
+
     return this.userRepository.save(user);
   }
 
-  // DELETE USER 
+  // DELETE USER
   async deleteUser(id: string) {
     const user = await this.userRepository.findOne({
       where: { id, deletedAt: IsNull() },
@@ -121,39 +133,38 @@ export class UserService {
     return true;
   }
 
+  // UPDATE MY PROFILE
+  async updateMyProfile(userId: string, data: { name: string }) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId, deletedAt: IsNull() },
+      relations: ["role"],
+    });
 
-  //  UPDATE MY PROFILE 
-async updateMyProfile(userId: string, data: { name: string }) {
-  const user = await this.userRepository.findOne({
-    where: { id: userId, deletedAt: IsNull() },
-    relations: ["role"],
-  });
+    if (!user) return null;
 
-  if (!user) return null;
+    user.name = data.name;
 
-  user.name = data.name;
+    const saved = await this.userRepository.save(user);
 
-  const saved = await this.userRepository.save(user);
+    return {
+      id: saved.id,
+      name: saved.name,
+      email: saved.email,
+      roleName: saved.role?.name ?? saved.roleName,
+      status: saved.status,
+    };
+  }
 
-  // Return safe data
-  return {
-    id: saved.id,
-    name: saved.name,
-    email: saved.email,
-    roleName: (saved as any).roleName ?? saved.roleName, 
-    status: (saved as any).status,
-  };
-}
-  //  GET UNASSIGNED USERS 
-async getUnassignedUsers() {
-  return this.userRepository.find({
-    where: {
-      roleName: RoleName.USER,
-      departmentId: IsNull(),
-      deletedAt: IsNull(),
-    },
-    select: ["id", "name", "email", "roleName"],
-    order: { name: "ASC" },
-  });
-}
+  // GET UNASSIGNED USERS
+  async getUnassignedUsers() {
+    return this.userRepository.find({
+      where: {
+        roleName: RoleName.USER,
+        departmentId: IsNull(),
+        deletedAt: IsNull(),
+      },
+      select: ["id", "name", "email", "roleName"],
+      order: { name: "ASC" },
+    });
+  }
 }
