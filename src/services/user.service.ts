@@ -60,12 +60,20 @@ export class UserService {
 
   // GET MANAGERS
   async getManagers() {
-    return this.userRepository.find({
-      where: { roleName: RoleName.MANAGER, deletedAt: IsNull() },
-      select: ["id", "name", "email", "roleName", "status"],
-      order: { name: "ASC" },
-    });
-  }
+  return this.userRepository
+    .createQueryBuilder("user")
+    .leftJoin("user.role", "role")
+    .where("role.name = :role", { role: RoleName.MANAGER })
+    .andWhere("user.deletedAt IS NULL")
+    .select([
+      "user.id",
+      "user.name",
+      "user.email",
+      "role.name"
+    ])
+    .orderBy("user.name", "ASC")
+    .getMany();
+}
 
   //  FIND USER BY EMAIL 
   async findUserByEmail(email: string) {
