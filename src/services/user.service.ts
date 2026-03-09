@@ -157,14 +157,14 @@ export class UserService {
 
   // GET UNASSIGNED USERS
   async getUnassignedUsers() {
-    return this.userRepository.find({
-      where: {
-        roleName: RoleName.USER,
-        departmentId: IsNull(),
-        deletedAt: IsNull(),
-      },
-      select: ["id", "name", "email", "roleName"],
-      order: { name: "ASC" },
-    });
-  }
+  return this.userRepository.find({
+    where: {
+      roleName: RoleName.USER,
+      departmentId: IsNull(),
+      deletedAt: IsNull(),
+    },
+    select: ["id", "name", "email", "roleName"],
+    order: { name: "ASC" },
+  });
+}
 }
