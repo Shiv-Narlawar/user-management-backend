@@ -16,6 +16,7 @@ export interface AccessPayload {
   id: string;
   email: string;
   role: RoleName;
+  departmentId?: string;
   permissions: string[];
 }
 

@@ -6,7 +6,7 @@ import { RoleName } from "../entities/role.entity";
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
 
-  // GET ALL USERS
+  // ================= GET ALL USERS =================
   async getAllUsers(params?: {
     search?: string;
     departmentId?: string;
@@ -23,12 +23,14 @@ export class UserService {
       .where("user.deletedAt IS NULL");
 
     const search = params?.search?.trim();
+
     if (search) {
       qb.andWhere("(user.name ILIKE :q OR user.email ILIKE :q)", {
         q: `%${search}%`,
       });
     }
 
+    // 🔐 Department Filtering (Controller decides department)
     if (params?.departmentId) {
       qb.andWhere("user.departmentId = :departmentId", {
         departmentId: params.departmentId,
@@ -50,7 +52,7 @@ export class UserService {
     };
   }
 
-  // GET USER BY ID
+  // ================= GET USER BY ID =================
   async getUserById(id: string) {
     return this.userRepository.findOne({
       where: { id, deletedAt: IsNull() },
@@ -58,31 +60,26 @@ export class UserService {
     });
   }
 
-  // GET MANAGERS
+  // ================= GET MANAGERS =================
   async getManagers() {
     return this.userRepository
       .createQueryBuilder("user")
       .leftJoin("user.role", "role")
       .where("role.name = :role", { role: RoleName.MANAGER })
       .andWhere("user.deletedAt IS NULL")
-      .select([
-        "user.id",
-        "user.name",
-        "user.email",
-        "role.name"
-      ])
+      .select(["user.id", "user.name", "user.email", "role.name"])
       .orderBy("user.name", "ASC")
       .getMany();
   }
 
-  // FIND USER BY EMAIL
+  // ================= FIND USER BY EMAIL =================
   async findUserByEmail(email: string) {
     return this.userRepository.findOne({
       where: { email, deletedAt: IsNull() },
     });
   }
 
-  // CREATE USER
+  // ================= CREATE USER =================
   async createUser(data: Partial<User>) {
     const { deletedAt, ...safe } = data as Partial<User> & {
       deletedAt?: unknown;
@@ -90,7 +87,6 @@ export class UserService {
 
     const user = this.userRepository.create(safe);
 
-    // 🔥 FIX: sync roleName with role relation
     if (user.role) {
       user.roleName = user.role.name;
     }
@@ -98,7 +94,7 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
-  // UPDATE USER
+  // ================= UPDATE USER =================
   async updateUser(id: string, data: Partial<User>) {
     const user = await this.userRepository.findOne({
       where: { id, deletedAt: IsNull() },
@@ -113,7 +109,6 @@ export class UserService {
 
     Object.assign(user, safe);
 
-    // 🔥 FIX: keep roleName in sync
     if (user.role) {
       user.roleName = user.role.name;
     }
@@ -121,7 +116,7 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
-  // DELETE USER
+  // ================= DELETE USER =================
   async deleteUser(id: string) {
     const user = await this.userRepository.findOne({
       where: { id, deletedAt: IsNull() },
@@ -130,10 +125,11 @@ export class UserService {
     if (!user) return false;
 
     await this.userRepository.softRemove(user);
+
     return true;
   }
 
-  // UPDATE MY PROFILE
+  // ================= UPDATE MY PROFILE =================
   async updateMyProfile(userId: string, data: { name: string }) {
     const user = await this.userRepository.findOne({
       where: { id: userId, deletedAt: IsNull() },
@@ -155,16 +151,16 @@ export class UserService {
     };
   }
 
-  // GET UNASSIGNED USERS
+  // ================= GET UNASSIGNED USERS =================
   async getUnassignedUsers() {
-  return this.userRepository.find({
-    where: {
-      roleName: RoleName.USER,
-      departmentId: IsNull(),
-      deletedAt: IsNull(),
-    },
-    select: ["id", "name", "email", "roleName"],
-    order: { name: "ASC" },
-  });
-}
+    return this.userRepository.find({
+      where: {
+        roleName: RoleName.USER,
+        departmentId: IsNull(),
+        deletedAt: IsNull(),
+      },
+      select: ["id", "name", "email", "roleName"],
+      order: { name: "ASC" },
+    });
+  }
 }
