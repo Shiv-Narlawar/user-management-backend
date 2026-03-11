@@ -77,7 +77,7 @@ export class LocalAuthService implements AuthService {
   email: normalizedEmail,
   password: hashedPassword,
   role,
-  roleName: role.name, // ⭐ FIX: sync roleName with role
+  roleName: role.name,
   status: UserStatus.ACTIVE,
 });
 

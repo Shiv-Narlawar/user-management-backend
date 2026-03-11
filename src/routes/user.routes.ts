@@ -22,6 +22,13 @@ router.get(
 );
 
 router.get(
+  "/unassigned-managers",
+  authMiddleware,
+  authorize(PermissionName.USER_VIEW),
+  userController.getUnassignedManagers
+);
+
+router.get(
   "/",
   authMiddleware,
   authorize(PermissionName.USER_VIEW),

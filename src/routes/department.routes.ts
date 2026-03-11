@@ -7,7 +7,7 @@ import { PermissionName } from "../constants/permission-name";
 const router = Router();
 const controller = new DepartmentController();
 
-// View departments
+// ================= VIEW DEPARTMENTS =================
 router.get(
   "/",
   authMiddleware,
@@ -15,7 +15,7 @@ router.get(
   controller.getDepartments
 );
 
-// Create department (ADMIN only)
+// ================= CREATE DEPARTMENT =================
 router.post(
   "/",
   authMiddleware,
@@ -23,7 +23,7 @@ router.post(
   controller.createDepartment
 );
 
-// Update department (ADMIN only)
+// ================= UPDATE DEPARTMENT =================
 router.put(
   "/:id",
   authMiddleware,
@@ -31,7 +31,7 @@ router.put(
   controller.updateDepartment
 );
 
-// Delete department (ADMIN only)
+// ================= DELETE DEPARTMENT =================
 router.delete(
   "/:id",
   authMiddleware,
@@ -39,7 +39,15 @@ router.delete(
   controller.deleteDepartment
 );
 
-// Assign user to department
+// ================= ASSIGN MANAGER =================
+router.post(
+  "/:id/assign-manager",
+  authMiddleware,
+  authorize(PermissionName.DEPARTMENT_UPDATE),
+  controller.updateDepartment
+);
+
+// ================= ASSIGN USER =================
 router.post(
   "/:id/assign-user",
   authMiddleware,
@@ -47,6 +55,7 @@ router.post(
   controller.assignUserToDepartment
 );
 
+// ================= REMOVE USER =================
 router.delete(
   "/:id/remove-user/:userId",
   authMiddleware,

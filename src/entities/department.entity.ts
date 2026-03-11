@@ -15,14 +15,13 @@ export class Department extends AppBaseEntity {
   @Column()
   name!: string;
 
-  // One department -> one manager
-  @Index({ unique: true })
-  @Column({ type: "uuid" })
-  managerId!: string;
+  // Manager is optional when creating department
+  @Column({ type: "uuid", nullable: true })
+  managerId!: string | null;
 
-  @ManyToOne(() => User, { nullable: false, onDelete: "RESTRICT" })
+  @ManyToOne(() => User, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "managerId" })
-  manager!: User;
+  manager!: User | null;
 
   // Department -> many users
   @OneToMany(() => User, (u) => u.department)

@@ -4,12 +4,11 @@ import { Role, RoleName } from "../entities/role.entity";
 import { Permission } from "../entities/permission.entity";
 import { PermissionName } from "../constants/permission-name";
 
-function isUuid(v: unknown): v is string {
-  return (
-    typeof v === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)
-  );
-}
+import {
+  roleIdSchema,
+  createRoleSchema,
+  updateRolePermissionsSchema,
+} from "../validators/role.validator";
 
 export class RoleController {
   private roleRepo = AppDataSource.getRepository(Role);
@@ -29,97 +28,85 @@ export class RoleController {
     }
   };
 
-  
   createRole = async (req: Request, res: Response) => {
     try {
-      const { name } = req.body as { name?: RoleName };
+      const data = createRoleSchema.parse(req.body);
 
-      if (!name) {
-        return res.status(400).json({ message: "Role name is required" });
-      }
+      const exists = await this.roleRepo.findOne({
+        where: { name: data.name },
+      });
 
-      if (!Object.values(RoleName).includes(name)) {
-        return res.status(400).json({ message: "Invalid role name" });
-      }
-
-      const exists = await this.roleRepo.findOne({ where: { name } });
       if (exists) {
         return res.status(409).json({ message: "Role already exists" });
       }
 
-      const role = this.roleRepo.create({ name, permissions: [] });
+      const role = this.roleRepo.create({
+        name: data.name,
+        permissions: [],
+      });
+
       const saved = await this.roleRepo.save(role);
 
-      return res.status(201).json({ message: "Role created", role: saved });
+      return res.status(201).json({
+        message: "Role created",
+        role: saved,
+      });
     } catch (err) {
       console.error("createRole error:", err);
-      return res.status(500).json({ message: "Failed to create role" });
+      return res.status(400).json({ message: "Invalid request data" });
     }
   };
 
-  
   updateRolePermissions = async (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id);
+    try {
+      const { id } = roleIdSchema.parse(req.params);
+      const { permissions } = updateRolePermissionsSchema.parse(req.body);
 
-    if (!isUuid(id)) {
-      return res.status(400).json({ message: "Invalid role id" });
-    }
+      const role = await this.roleRepo.findOne({
+        where: { id },
+        relations: ["permissions"],
+      });
 
-    const { permissions } = req.body as { permissions?: PermissionName[] };
+      if (!role) {
+        return res.status(404).json({ message: "Role not found" });
+      }
 
-    if (!Array.isArray(permissions)) {
-      return res.status(400).json({ message: "permissions must be an array" });
-    }
+      // Protect ADMIN role
+      if (role.name === RoleName.ADMIN) {
+        const all = await this.permissionRepo.find();
 
-    const role = await this.roleRepo.findOne({
-      where: { id },
-      relations: ["permissions"],
-    });
+        role.permissions = all;
+        await this.roleRepo.save(role);
 
-    if (!role) {
-      return res.status(404).json({ message: "Role not found" });
-    }
+        return res.json({
+          message: "ADMIN always has all permissions",
+          permissions: role.permissions.map((p) => p.name),
+        });
+      }
 
-    // Protect ADMIN role
-    if (role.name === RoleName.ADMIN) {
-      const all = await this.permissionRepo.find();
-      role.permissions = all;
+      const permissionEntities = await this.permissionRepo.find({
+        where: permissions.map((name) => ({ name })),
+      });
+
+      role.permissions = permissionEntities;
+
       await this.roleRepo.save(role);
 
       return res.json({
-        message: "ADMIN always has all permissions",
+        message: "Role permissions updated",
+        roleId: role.id,
+        roleName: role.name,
         permissions: role.permissions.map((p) => p.name),
       });
+    } catch (err) {
+      console.error("updateRolePermissions error:", err);
+      return res.status(400).json({ message: "Invalid request data" });
     }
+  };
 
-    // Fetch permissions by NAME
-    const permissionEntities = await this.permissionRepo.find({
-      where: permissions.map((name) => ({ name })),
-    });
-
-    role.permissions = permissionEntities;
-
-    await this.roleRepo.save(role);
-
-    return res.json({
-      message: "Role permissions updated",
-      roleId: role.id,
-      roleName: role.name,
-      permissions: role.permissions.map((p) => p.name),
-    });
-
-  } catch (err) {
-    console.error("updateRolePermissions error:", err);
-    return res.status(500).json({ message: "Failed to update role permissions" });
-  }
-};
   getRolePermissions = async (req: Request, res: Response) => {
     try {
-      const id = String(req.params.id);
-      if (!isUuid(id)) {
-        return res.status(400).json({ message: "Invalid role id" });
-      }
+      const { id } = roleIdSchema.parse(req.params);
 
       const role = await this.roleRepo.findOne({
         where: { id },
@@ -133,20 +120,17 @@ export class RoleController {
       return res.json({
         roleId: role.id,
         roleName: role.name,
-        permissions: (role.permissions || []).map((p) => p.name),
+        permissions: role.permissions.map((p) => p.name),
       });
     } catch (err) {
       console.error("getRolePermissions error:", err);
-      return res.status(500).json({ message: "Failed to fetch role permissions" });
+      return res.status(400).json({ message: "Invalid role id" });
     }
   };
 
   deleteRole = async (req: Request, res: Response) => {
     try {
-      const id = String(req.params.id);
-      if (!isUuid(id)) {
-        return res.status(400).json({ message: "Invalid role id" });
-      }
+      const { id } = roleIdSchema.parse(req.params);
 
       const role = await this.roleRepo.findOne({ where: { id } });
 
@@ -154,9 +138,10 @@ export class RoleController {
         return res.status(404).json({ message: "Role not found" });
       }
 
-      // Protect ADMIN role
       if (role.name === RoleName.ADMIN) {
-        return res.status(403).json({ message: "ADMIN role cannot be deleted" });
+        return res
+          .status(403)
+          .json({ message: "ADMIN role cannot be deleted" });
       }
 
       await this.roleRepo.delete(id);
@@ -164,7 +149,7 @@ export class RoleController {
       return res.json({ message: "Role deleted successfully" });
     } catch (err) {
       console.error("deleteRole error:", err);
-      return res.status(500).json({ message: "Failed to delete role" });
+      return res.status(400).json({ message: "Invalid role id" });
     }
   };
 }

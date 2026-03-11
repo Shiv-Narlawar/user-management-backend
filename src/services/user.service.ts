@@ -150,7 +150,16 @@ export class UserService {
       status: saved.status,
     };
   }
-
+   
+  async getUnassignedManagers() {
+  return this.userRepository
+    .createQueryBuilder("user")
+    .leftJoin("department", "dept", "dept.managerId = user.id")
+    .where("user.roleName = :role", { role: RoleName.MANAGER })
+    .andWhere("dept.id IS NULL")
+    .select(["user.id", "user.name", "user.email"])
+    .getMany();
+}
   // ================= GET UNASSIGNED USERS =================
   async getUnassignedUsers() {
     return this.userRepository.find({
