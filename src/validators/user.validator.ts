@@ -33,7 +33,30 @@ export const updateMyProfileSchema = z.object({
 
 // ================= USERS LIST QUERY =================
 export const getUsersQuerySchema = z.object({
-  search: z.string().max(100).optional(),
-  page: z.coerce.number().default(1),
-  limit: z.coerce.number().default(10),
+  search: z
+    .string()
+    .max(100)
+    .transform((v) => v.trim())
+    .optional(),
+
+     role: z.enum([RoleName.USER, RoleName.MANAGER]).optional(),
+
+  page: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(1),
+
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(10),
+
+  // ✅ Added for sorting users by createdAt
+  sort: z
+    .enum(["ASC", "DESC"])
+    .default("DESC")
+    .optional(),
 });

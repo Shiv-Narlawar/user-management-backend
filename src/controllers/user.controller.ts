@@ -19,69 +19,75 @@ const userService = new UserService();
 export class UserController {
 
   async getUsers(req: AuthRequest, res: Response) {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
+  try {
 
-      const query = getUsersQuerySchema.parse(req.query);
-
-      let departmentId: string | undefined;
-
-      if (req.user.role !== RoleName.ADMIN) {
-
-        if (req.user.role === RoleName.MANAGER) {
-
-          const deptRepo = AppDataSource.getRepository(Department);
-
-          const myDept = await deptRepo.findOne({
-            where: { managerId: req.user.id },
-          });
-
-          if (!myDept) {
-            return res.json({
-              data: [],
-              total: 0,
-              page: query.page,
-              limit: query.limit,
-              totalPages: 1,
-            });
-          }
-
-          departmentId = myDept.id;
-
-        } else {
-
-          const me = await userService.getUserById(req.user.id);
-
-          if (!me || !me.departmentId) {
-            return res.json({
-              data: [],
-              total: 0,
-              page: query.page,
-              limit: query.limit,
-              totalPages: 1,
-            });
-          }
-
-          departmentId = me.departmentId;
-        }
-      }
-
-      const result = await userService.getAllUsers({
-        search: query.search,
-        departmentId,
-        page: query.page,
-        limit: query.limit,
-      });
-
-      return res.json(result);
-
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      return res.status(500).json({ message: "Failed to fetch users" });
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
+
+    const query = getUsersQuerySchema.parse(req.query);
+
+    let departmentId: string | undefined;
+
+    if (req.user.role !== RoleName.ADMIN) {
+
+      if (req.user.role === RoleName.MANAGER) {
+
+        const deptRepo = AppDataSource.getRepository(Department);
+
+        const myDept = await deptRepo.findOne({
+          where: { managerId: req.user.id },
+        });
+
+        if (!myDept) {
+          return res.json({
+            data: [],
+            total: 0,
+            page: query.page,
+            limit: query.limit,
+            totalPages: 1,
+          });
+        }
+
+        departmentId = myDept.id;
+
+      } else {
+
+        const me = await userService.getUserById(req.user.id);
+
+        if (!me || !me.departmentId) {
+          return res.json({
+            data: [],
+            total: 0,
+            page: query.page,
+            limit: query.limit,
+            totalPages: 1,
+          });
+        }
+
+        departmentId = me.departmentId;
+      }
+    }
+
+    const result = await userService.getAllUsers({
+  search: query.search,
+  role: query.role,
+  departmentId,
+  page: query.page,
+  limit: query.limit,
+  sort: query.sort,
+});
+
+    return res.json(result);
+
+  } catch (error) {
+    console.error("Error fetching users:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch users",
+    });
   }
+}
 
   async getUser(req: AuthRequest, res: Response) {
     try {
