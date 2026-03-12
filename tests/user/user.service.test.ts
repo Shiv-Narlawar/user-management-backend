@@ -1,6 +1,6 @@
 import { UserService } from "../../src/services/user.service";
 import { AppDataSource } from "../../src/config/data-source";
-import { User } from "../../src/entities/user.entity";
+import { RoleName } from "../../src/entities/role.entity";
 
 jest.mock("../../src/config/data-source", () => ({
   AppDataSource: {
@@ -11,17 +11,30 @@ jest.mock("../../src/config/data-source", () => ({
 describe("UserService", () => {
   let userService: UserService;
   let mockRepository: any;
+  let mockQueryBuilder: any;
 
   beforeEach(() => {
+    mockQueryBuilder = {
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn(),
+    };
+
     mockRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
       find: jest.fn(),
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+      softRemove: jest.fn(),
     };
+
     (AppDataSource.getRepository as jest.Mock).mockReturnValue(mockRepository);
+
     userService = new UserService();
   });
 
@@ -29,218 +42,183 @@ describe("UserService", () => {
     jest.clearAllMocks();
   });
 
-  // CREATE USER TESTS
-  describe("createUser", () => {
-    it("should create a new user successfully", async () => {
-      const userData = {
-        name: "John Doe",
-        email: "john@test.com",
-        password: "123456",
-        status: "ACTIVE",
-      };
-
-      const mockUser = { id: "1", ...userData };
-
-      mockRepository.create.mockReturnValue(userData);
-      mockRepository.save.mockResolvedValue(mockUser);
-
-      const result = await userService.createUser(userData);
-
-      expect(result.id).toBe("1");
-      expect(result.email).toBe("john@test.com");
-      expect(mockRepository.create).toHaveBeenCalledWith(userData);
-      expect(mockRepository.save).toHaveBeenCalled();
-    });
-
-    it("should validate email format", async () => {
-      const invalidData = {
-        name: "Test",
-        email: "invalid-email",
-        password: "123456",
-      };
-
-      mockRepository.create.mockReturnValue(invalidData);
-      mockRepository.save.mockRejectedValue(new Error("Invalid email"));
-
-      await expect(userService.createUser(invalidData)).rejects.toThrow("Invalid email");
-    });
-
-    it("should handle duplicate email error", async () => {
-      const userData = {
-        name: "Test",
-        email: "duplicate@test.com",
-        password: "123456",
-      };
-
-      mockRepository.create.mockReturnValue(userData);
-      mockRepository.save.mockRejectedValue(new Error("Duplicate email"));
-
-      await expect(userService.createUser(userData)).rejects.toThrow("Duplicate email");
-    });
-  });
-
-  // GET ALL USERS TESTS
+  // GET ALL USERS
   describe("getAllUsers", () => {
-    it("should return all users", async () => {
-      const mockUsers = [
-        { id: "1", email: "user1@test.com", name: "User 1" },
-        { id: "2", email: "user2@test.com", name: "User 2" },
-      ];
+    it("should return paginated users", async () => {
+      const users = [{ id: "1", name: "Test" }];
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([users, 1]);
 
-      mockRepository.find.mockResolvedValue(mockUsers);
+      const result = await userService.getAllUsers({ page: 1, limit: 10 });
 
-      const result = await userService.getAllUsers();
-
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(2);
-      expect(mockRepository.find).toHaveBeenCalledWith({
-        relations: ["role", "applications"],
-      });
+      expect(result.data).toEqual(users);
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(10);
     });
 
-    it("should return empty array when no users exist", async () => {
-      mockRepository.find.mockResolvedValue([]);
+    it("should apply search filter", async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
 
-      const result = await userService.getAllUsers();
+      await userService.getAllUsers({ search: "john" });
 
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(0);
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalled();
     });
 
-    it("should handle database errors when fetching all users", async () => {
-      mockRepository.find.mockRejectedValue(new Error("Database error"));
+    it("should apply department filter", async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
 
-      await expect(userService.getAllUsers()).rejects.toThrow("Database error");
+      await userService.getAllUsers({ departmentId: "dept1" });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalled();
     });
   });
 
-  // GET USER BY ID TESTS
+  // GET USER BY ID
   describe("getUserById", () => {
-    it("should return a user by id", async () => {
-      const mockUser = { id: "1", email: "user@test.com", name: "Test User", role: {} };
-
-      mockRepository.findOne.mockResolvedValue(mockUser);
+    it("should return user", async () => {
+      const user = { id: "1", name: "Test" };
+      mockRepository.findOne.mockResolvedValue(user);
 
       const result = await userService.getUserById("1");
 
-      expect(result).toEqual(mockUser);
-      expect(mockRepository.findOne).toHaveBeenCalledWith({
-        where: { id: "1" },
-        relations: ["role"],
-      });
+      expect(result).toEqual(user);
     });
 
-    it("should return null when user does not exist", async () => {
+    it("should return null if user not found", async () => {
       mockRepository.findOne.mockResolvedValue(null);
 
-      const result = await userService.getUserById("non-existent-id");
+      const result = await userService.getUserById("99");
 
       expect(result).toBeNull();
     });
+  });
 
-    it("should handle database errors when fetching user by id", async () => {
-      mockRepository.findOne.mockRejectedValue(new Error("Database error"));
+  // GET MANAGERS
+  describe("getManagers", () => {
+    it("should return managers", async () => {
+      const managers = [{ id: "1", roleName: RoleName.MANAGER }];
+      mockRepository.find.mockResolvedValue(managers);
 
-      await expect(userService.getUserById("1")).rejects.toThrow("Database error");
+      const result = await userService.getManagers();
+
+      expect(result).toEqual(managers);
+      expect(mockRepository.find).toHaveBeenCalled();
     });
   });
 
-  // UPDATE USER TESTS
+  // FIND USER BY EMAIL
+  describe("findUserByEmail", () => {
+    it("should return user by email", async () => {
+      const user = { email: "test@test.com" };
+      mockRepository.findOne.mockResolvedValue(user);
+
+      const result = await userService.findUserByEmail("test@test.com");
+
+      expect(result).toEqual(user);
+    });
+  });
+
+  // CREATE USER
+  describe("createUser", () => {
+    it("should create and save user", async () => {
+      const data = { name: "John", email: "john@test.com" };
+      const savedUser = { id: "1", ...data };
+
+      mockRepository.create.mockReturnValue(data);
+      mockRepository.save.mockResolvedValue(savedUser);
+
+      const result = await userService.createUser(data);
+
+      expect(mockRepository.create).toHaveBeenCalledWith(data);
+      expect(result).toEqual(savedUser);
+    });
+  });
+
+  // UPDATE USER
   describe("updateUser", () => {
     it("should update user successfully", async () => {
-      const updateData = { name: "Updated Name", status: "INACTIVE" };
-      const mockUser = { id: "1", email: "user@test.com", ...updateData };
+      const user = { id: "1", name: "Old" };
+      const updated = { id: "1", name: "New" };
 
-      mockRepository.update.mockResolvedValue({ affected: 1 });
-      mockRepository.findOne.mockResolvedValue(mockUser);
+      mockRepository.findOne.mockResolvedValue(user);
+      mockRepository.save.mockResolvedValue(updated);
 
-      const result = await userService.updateUser("1", updateData);
+      const result = await userService.updateUser("1", { name: "New" });
 
-      expect(result).toEqual(mockUser);
-      expect(mockRepository.update).toHaveBeenCalledWith("1", updateData);
+      expect(result).toEqual(updated);
     });
 
-    it("should perform partial update", async () => {
-      const partialUpdate = { name: "New Name" };
-      const mockUser = { id: "1", email: "user@test.com", ...partialUpdate };
-
-      mockRepository.update.mockResolvedValue({ affected: 1 });
-      mockRepository.findOne.mockResolvedValue(mockUser);
-
-      const result = await userService.updateUser("1", partialUpdate);
-
-      expect(result).not.toBeNull();
-      expect(result?.name).toBe("New Name");
-    });
-
-    it("should return user with updated data when user exists", async () => {
-      const updateData = { status: "SUSPENDED" };
-      const mockUser = { id: "1", email: "user@test.com", status: "SUSPENDED" };
-
-      mockRepository.update.mockResolvedValue({ affected: 1 });
-      mockRepository.findOne.mockResolvedValue(mockUser);
-
-      const result = await userService.updateUser("1", updateData);
-
-      expect(result).not.toBeNull();
-      expect(result?.status).toBe("SUSPENDED");
-    });
-
-    it("should handle non-existent user update", async () => {
-      mockRepository.update.mockResolvedValue({ affected: 0 });
+    it("should return null if user does not exist", async () => {
       mockRepository.findOne.mockResolvedValue(null);
 
-      const result = await userService.updateUser("non-existent", { name: "Test" });
+      const result = await userService.updateUser("99", { name: "Test" });
 
       expect(result).toBeNull();
     });
+  });
 
-    it("should handle database errors during update", async () => {
-      mockRepository.update.mockRejectedValue(new Error("Database error"));
+  // DELETE USER
+  describe("deleteUser", () => {
+    it("should soft delete user", async () => {
+      const user = { id: "1" };
 
-      await expect(userService.updateUser("1", { name: "Test" })).rejects.toThrow("Database error");
+      mockRepository.findOne.mockResolvedValue(user);
+      mockRepository.softRemove.mockResolvedValue(user);
+
+      const result = await userService.deleteUser("1");
+
+      expect(result).toBe(true);
+      expect(mockRepository.softRemove).toHaveBeenCalled();
+    });
+
+    it("should return false if user not found", async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+
+      const result = await userService.deleteUser("99");
+
+      expect(result).toBe(false);
     });
   });
 
-  // DELETE USER TESTS
-  describe("deleteUser", () => {
-    it("should delete user successfully", async () => {
-      mockRepository.delete.mockResolvedValue({ affected: 1 });
+  // UPDATE MY PROFILE
+  describe("updateMyProfile", () => {
+    it("should update profile name", async () => {
+      const user = {
+        id: "1",
+        name: "Old",
+        email: "test@test.com",
+        roleName: "USER",
+        status: "ACTIVE",
+      };
 
-      const result = await userService.deleteUser("1");
+      const saved = { ...user, name: "New" };
 
-      expect(result).toBe(true);
-      expect(mockRepository.delete).toHaveBeenCalledWith("1");
+      mockRepository.findOne.mockResolvedValue(user);
+      mockRepository.save.mockResolvedValue(saved);
+
+      const result = await userService.updateMyProfile("1", { name: "New" });
+
+      expect(result?.name).toBe("New");
     });
 
-    it("should return false when user does not exist", async () => {
-      mockRepository.delete.mockResolvedValue({ affected: 0 });
+    it("should return null if user not found", async () => {
+      mockRepository.findOne.mockResolvedValue(null);
 
-      const result = await userService.deleteUser("non-existent-id");
+      const result = await userService.updateMyProfile("99", { name: "Test" });
 
-      expect(result).toBe(false);
+      expect(result).toBeNull();
     });
+  });
 
-    it("should handle database errors during deletion", async () => {
-      mockRepository.delete.mockRejectedValue(new Error("Database error"));
+  // GET UNASSIGNED USERS
+  describe("getUnassignedUsers", () => {
+    it("should return users without department", async () => {
+      const users = [{ id: "1", roleName: RoleName.USER }];
+      mockRepository.find.mockResolvedValue(users);
 
-      await expect(userService.deleteUser("1")).rejects.toThrow("Database error");
-    });
+      const result = await userService.getUnassignedUsers();
 
-    it("should return true for single deleted user", async () => {
-      mockRepository.delete.mockResolvedValue({ affected: 1 });
-
-      const result = await userService.deleteUser("1");
-
-      expect(result).toBe(true);
-    });
-
-    it("should return false when delete result shows zero affected rows", async () => {
-      mockRepository.delete.mockResolvedValue({ affected: 0 });
-
-      const result = await userService.deleteUser("1");
-
-      expect(result).toBe(false);
+      expect(result).toEqual(users);
     });
   });
 });

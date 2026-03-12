@@ -1,49 +1,62 @@
 import { AppDataSource } from "../config/data-source";
-import { Role } from "../entities/role.entity";
+import { Role, RoleName } from "../entities/role.entity";
 import { Permission } from "../entities/permission.entity";
+import { PermissionName } from "../constants/permission-name";
 
 export const seedRolePermissions = async () => {
   const roleRepo = AppDataSource.getRepository(Role);
   const permissionRepo = AppDataSource.getRepository(Permission);
 
-  const admin = await roleRepo.findOne({
-    where: { name: "ADMIN" },
-    relations: ["permissions"],
-  });
-
-  const manager = await roleRepo.findOne({
-    where: { name: "MANAGER" },
-    relations: ["permissions"],
-  });
-
-  const user = await roleRepo.findOne({
-    where: { name: "USER" },
-    relations: ["permissions"],
-  });
-
   const allPermissions = await permissionRepo.find();
+
+  const permissionMap = new Map(
+    allPermissions.map((p) => [p.name, p])
+  );
+
+  //  ADMIN 
+  const admin = await roleRepo.findOne({
+    where: { name: RoleName.ADMIN },
+    relations: ["permissions"],
+  });
 
   if (admin) {
     admin.permissions = allPermissions;
     await roleRepo.save(admin);
-    console.log("Permissions assigned to ADMIN");
+    console.log("ADMIN permissions assigned");
   }
+
+  //  MANAGER 
+  const manager = await roleRepo.findOne({
+    where: { name: RoleName.MANAGER },
+    relations: ["permissions"],
+  });
 
   if (manager) {
-    manager.permissions = allPermissions.filter(
-      (p) => p.name !== "PERMISSION_ASSIGN"
-    );
+    manager.permissions = [
+      permissionMap.get(PermissionName.USER_VIEW),
+      permissionMap.get(PermissionName.USER_UPDATE),
+      permissionMap.get(PermissionName.DEPARTMENT_VIEW),
+      permissionMap.get(PermissionName.DEPARTMENT_ASSIGN_USER),
+    ].filter(Boolean) as Permission[];
+
     await roleRepo.save(manager);
-    console.log("Permissions assigned to MANAGER");
+    console.log("MANAGER permissions assigned");
   }
+
+  // USER 
+  const user = await roleRepo.findOne({
+    where: { name: RoleName.USER },
+    relations: ["permissions"],
+  });
 
   if (user) {
-    user.permissions = allPermissions.filter(
-      (p) => p.name === "USER_VIEW"
-    );
+    user.permissions = [
+      permissionMap.get(PermissionName.USER_VIEW),
+    ].filter(Boolean) as Permission[];
+
     await roleRepo.save(user);
-    console.log("Permissions assigned to USER");
+    console.log("USER permissions assigned");
   }
 
-  console.log("Role-permission seeding completed");
+  console.log("Role-permission seeding completed successfully.");
 };

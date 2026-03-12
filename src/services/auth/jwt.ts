@@ -1,32 +1,31 @@
 import jwt from "jsonwebtoken";
+import { RoleName } from "../../entities/role.entity";
 
-
-const ACCESS_SECRET = process.env.JWT_SECRET as string;
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET as string;
+const ACCESS_SECRET = process.env.JWT_SECRET;
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 if (!ACCESS_SECRET) {
   throw new Error("JWT_SECRET is not defined");
 }
+
 if (!REFRESH_SECRET) {
   throw new Error("JWT_REFRESH_SECRET is not defined");
 }
 
-
 export interface AccessPayload {
   id: string;
   email: string;
-  role: string;
+  role: RoleName;
+  departmentId?: string;
   permissions: string[];
 }
 
-
-export type JwtPayload = AccessPayload;
-
 export interface RefreshPayload {
-  id: string;   // user id
-  jti: string;  // refresh token DB id
+  id: string;
+  jti: string;
 }
 
+export type JwtPayload = AccessPayload;
 
 
 export const signAccessToken = (payload: AccessPayload): string => {
@@ -39,25 +38,38 @@ export const signRefreshToken = (payload: RefreshPayload): string => {
 
 
 
-export const verifyAccessToken = (token: string): AccessPayload | null => {
+export const verifyAccessToken = (
+  token: string
+): AccessPayload | null => {
   try {
-    return jwt.verify(token, ACCESS_SECRET) as AccessPayload;
+    const decoded = jwt.verify(token, ACCESS_SECRET);
+
+    if (typeof decoded === "object" && decoded !== null) {
+      return decoded as AccessPayload;
+    }
+
+    return null;
   } catch {
     return null;
   }
 };
 
 
-export const verifyToken = (token: string): JwtPayload => {
-  return jwt.verify(token, ACCESS_SECRET) as JwtPayload;
-};
-
-
-
-export const verifyRefreshToken = (token: string): RefreshPayload | null => {
+export const verifyRefreshToken = (
+  token: string
+): RefreshPayload | null => {
   try {
-    return jwt.verify(token, REFRESH_SECRET) as RefreshPayload;
+    const decoded = jwt.verify(token, REFRESH_SECRET);
+
+    if (typeof decoded === "object" && decoded !== null) {
+      return decoded as RefreshPayload;
+    }
+
+    return null;
   } catch {
     return null;
   }
 };
+
+
+export const verifyToken = verifyAccessToken;

@@ -1,13 +1,9 @@
-import {
-  Entity, PrimaryGeneratedColumn, Column, ManyToOne, Index, CreateDateColumn,
-} from "typeorm";
+import { Entity, Column, ManyToOne, Index } from "typeorm";
 import { User } from "./user.entity";
+import { AppBaseEntity } from "./base.entity";
 
 @Entity({ name: "refresh_tokens" })
-export class RefreshToken {
-  @PrimaryGeneratedColumn("uuid")
-  id!: string;
-
+export class RefreshToken extends AppBaseEntity {
   @ManyToOne(() => User, (user) => user.refreshTokens, { onDelete: "CASCADE" })
   user!: User;
 
@@ -29,7 +25,4 @@ export class RefreshToken {
 
   @Column({ type: "varchar", length: 255, nullable: true })
   userAgent?: string | null;
-
-  @CreateDateColumn()
-  createdAt!: Date;
 }

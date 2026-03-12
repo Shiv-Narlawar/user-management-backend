@@ -1,172 +1,120 @@
 import { Request, Response } from "express";
 import { LocalAuthService } from "../services/auth/local.auth";
+import { asyncHandler } from "../middleware/asyncHandler";
+import { ApiError } from "../utils/apiError";
+import { RoleName } from "../entities/role.entity";
+import { AuthRequest } from "../types/auth-request";
 
-function mapErrorToStatus(message: string): number {
-  const msg = message.toLowerCase();
+import {
+  signupSchema,
+  loginSchema,
+  refreshSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  updatePasswordSchema,
+} from "../validators/auth.validator";
 
-  // auth failures
-  if (msg.includes("invalid email or password")) return 401;
-  if (msg.includes("invalid refresh token")) return 401;
-  if (msg.includes("refresh token revoked")) return 401;
-  if (msg.includes("refresh token expired")) return 401;
-
-  // conflicts
-  if (msg.includes("already exists")) return 409;
-
-  // not found
-  if (msg.includes("not found")) return 404;
-
-  // inactive user
-  if (msg.includes("inactive")) return 403;
-
-  // default: validation / bad request
-  return 400;
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
 }
 
 export class AuthController {
   private authService = new LocalAuthService();
 
-  signup = async (req: Request, res: Response) => {
-    try {
-      const { name, email, password, role } = req.body as {
-        name?: string;
-        email?: string;
-        password?: string;
-        role?: string;
-      };
+  // SIGNUP
+  signup = asyncHandler(async (req: Request, res: Response) => {
+    const data = signupSchema.parse(req.body);
 
-      if (!name || !email || !password || !role) {
-        return res.status(400).json({
-          message: "Name, email, password and role are required",
-        });
-      }
-
-      const allowedRoles = ["USER", "MANAGER"] as const;
-      if (!allowedRoles.includes(role as (typeof allowedRoles)[number])) {
-        return res.status(400).json({ message: "Invalid role selection" });
-      }
-
-      const result = await this.authService.signup(name, email, password, role);
-      return res.status(201).json(result);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Signup failed";
-      return res.status(mapErrorToStatus(message)).json({ message });
+    const allowedSignupRoles: RoleName[] = [RoleName.USER, RoleName.MANAGER];
+    if (!allowedSignupRoles.includes(data.role)) {
+      throw new ApiError(400, "Invalid role selection");
     }
-  };
 
-  login = async (req: Request, res: Response) => {
-    try {
-      const { email, password } = req.body as {
-        email?: string;
-        password?: string;
-      };
+    const result = await this.authService.signup(
+      data.name.trim(),
+      normalizeEmail(data.email),
+      data.password,
+      data.role
+    );
 
-      if (!email || !password) {
-        return res.status(400).json({
-          message: "Email and password are required",
-        });
-      }
+    return res.status(201).json(result);
+  });
 
-      const result = await this.authService.login(email, password);
-      return res.status(200).json(result);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Login failed";
-      return res.status(mapErrorToStatus(message)).json({ message });
-    }
-  };
+  // LOGIN
+  login = asyncHandler(async (req: Request, res: Response) => {
+    const data = loginSchema.parse(req.body);
 
-  //refresh access token using refresh token
-  refresh = async (req: Request, res: Response) => {
-    try {
-      const { refreshToken } = req.body as { refreshToken?: string };
+    const result = await this.authService.login(
+      normalizeEmail(data.email),
+      data.password
+    );
 
-      if (!refreshToken) {
-        return res.status(400).json({ message: "Refresh token is required" });
-      }
+    return res.status(200).json(result);
+  });
 
-      const result = await this.authService.refresh(refreshToken);
-      return res.status(200).json(result);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Refresh failed";
-      return res.status(mapErrorToStatus(message)).json({ message });
-    }
-  };
+  // REFRESH TOKEN
+  refresh = asyncHandler(async (req: Request, res: Response) => {
+    const data = refreshSchema.parse(req.body);
 
-  //logout (revoke refresh token)
-  logout = async (req: Request, res: Response) => {
-    try {
-      const { refreshToken } = req.body as { refreshToken?: string };
+    const result = await this.authService.refresh(data.refreshToken);
+    return res.status(200).json(result);
+  });
 
-      if (!refreshToken) {
-        return res.status(400).json({ message: "Refresh token is required" });
-      }
+  // LOGOUT
+  logout = asyncHandler(async (req: Request, res: Response) => {
+    const data = refreshSchema.parse(req.body);
 
-      const result = await this.authService.logout(refreshToken);
-      return res.status(200).json(result);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Logout failed";
-      return res.status(mapErrorToStatus(message)).json({ message });
-    }
-  };
+    const result = await this.authService.logout(data.refreshToken);
+    return res.status(200).json(result);
+  });
 
-  forgotPassword = async (req: Request, res: Response) => {
-    try {
-      const { email } = req.body as { email?: string };
+  // FORGOT PASSWORD
+  forgotPassword = asyncHandler(async (req: Request, res: Response) => {
+    const data = forgotPasswordSchema.parse(req.body);
 
-      if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-      }
+    const result = await this.authService.forgotPassword(
+      normalizeEmail(data.email)
+    );
 
-      const result = await this.authService.forgotPassword(email);
-      return res.status(200).json(result);
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Forgot password failed";
-      return res.status(mapErrorToStatus(message)).json({ message });
-    }
-  };
+    return res.status(200).json(result);
+  });
 
-  resetPassword = async (req: Request, res: Response) => {
-    try {
-      const { email, code, newPassword } = req.body as {
-        email?: string;
-        code?: string;
-        newPassword?: string;
-      };
+  // RESET PASSWORD
+  resetPassword = asyncHandler(async (req: Request, res: Response) => {
+    const data = resetPasswordSchema.parse(req.body);
 
-      if (!email || !code || !newPassword) {
-        return res.status(400).json({
-          message: "Email, code and new password are required",
-        });
-      }
+    const result = await this.authService.resetPassword(
+      normalizeEmail(data.email),
+      "NA",
+      data.newPassword
+    );
 
-      const result = await this.authService.resetPassword(
-        email,
-        code,
-        newPassword
-      );
-      return res.status(200).json(result);
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Reset password failed";
-      return res.status(mapErrorToStatus(message)).json({ message });
-    }
-  };
+    return res.status(200).json(result);
+  });
 
-  forgotUsername = async (req: Request, res: Response) => {
-    try {
-      const { email } = req.body as { email?: string };
+  // FORGOT USERNAME
+  forgotUsername = asyncHandler(async (req: Request, res: Response) => {
+    const data = forgotPasswordSchema.parse(req.body);
 
-      if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-      }
+    const result = await this.authService.forgotUsername(
+      normalizeEmail(data.email)
+    );
 
-      const result = await this.authService.forgotUsername(email);
-      return res.status(200).json(result);
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Forgot username failed";
-      return res.status(mapErrorToStatus(message)).json({ message });
-    }
-  };
+    return res.status(200).json(result);
+  });
+
+  // UPDATE PASSWORD
+  updatePassword = asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!req.user) throw new ApiError(401, "Unauthorized");
+
+    const data = updatePasswordSchema.parse(req.body);
+
+    const result = await this.authService.updatePassword(
+      req.user.id,
+      data.currentPassword,
+      data.newPassword
+    );
+
+    return res.status(200).json(result);
+  });
 }

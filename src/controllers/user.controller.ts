@@ -1,65 +1,286 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import { UserService } from "../services/user.service";
+import { RoleName } from "../entities/role.entity";
+import { AuthRequest } from "../types/auth-request";
+import { AppDataSource } from "../config/data-source";
+import { Department } from "../entities/department.entity";
+
+import {
+  userIdSchema,
+  createUserSchema,
+  updateMyProfileSchema,
+  getUsersQuerySchema,
+} from "../validators/user.validator";
 
 const userService = new UserService();
 
+
+
 export class UserController {
-  async getUsers(req: Request, res: Response) {
-    const users = await userService.getAllUsers();
-    return res.json(users);
-  }
 
-  async getUser(req: Request<{ id: string }>, res: Response) {
-    const { id } = req.params;
-
-    const user = await userService.getUserById(id);
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    return res.json(user);
-  }
-
-  async createUser(req: Request, res: Response) {
+  async getUsers(req: AuthRequest, res: Response) {
     try {
-      // Check if email already exists
-      const existingUser = await userService.findUserByEmail(req.body.email);
-      if (existingUser) {
-        return res.status(400).json({
-          message: "Email already exists",
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const query = getUsersQuerySchema.parse(req.query);
+
+      let departmentId: string | undefined;
+
+      if (req.user.role !== RoleName.ADMIN) {
+
+        if (req.user.role === RoleName.MANAGER) {
+
+          const deptRepo = AppDataSource.getRepository(Department);
+
+          const myDept = await deptRepo.findOne({
+            where: { managerId: req.user.id },
+          });
+
+          if (!myDept) {
+            return res.json({
+              data: [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+              totalPages: 1,
+            });
+          }
+
+          departmentId = myDept.id;
+
+        } else {
+
+          const me = await userService.getUserById(req.user.id);
+
+          if (!me || !me.departmentId) {
+            return res.json({
+              data: [],
+              total: 0,
+              page: query.page,
+              limit: query.limit,
+              totalPages: 1,
+            });
+          }
+
+          departmentId = me.departmentId;
+        }
+      }
+
+      const result = await userService.getAllUsers({
+        search: query.search,
+        departmentId,
+        page: query.page,
+        limit: query.limit,
+      });
+
+      return res.json(result);
+
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      return res.status(500).json({ message: "Failed to fetch users" });
+    }
+  }
+
+  async getUser(req: AuthRequest, res: Response) {
+    try {
+
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+
+      const { id } = userIdSchema.parse(req.params);
+
+      const user = await userService.getUserById(id);
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (req.user.role === RoleName.ADMIN) {
+        return res.json(user);
+      }
+
+      const me = await userService.getUserById(req.user.id);
+
+      if (!me || me.departmentId !== user.departmentId) {
+        return res.status(403).json({
+          message: "You can only view users from your department",
         });
       }
 
-      // Create new user
-      const user = await userService.createUser(req.body);
-      return res.status(201).json(user);
-    } catch (error: any) {
-      return res.status(500).json({
-        message: "Internal Server Error",
+      return res.json(user);
+
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      return res.status(400).json({ message: "Invalid request" });
+    }
+  }
+
+  async createUser(req: AuthRequest, res: Response) {
+    try {
+
+      const data = createUserSchema.parse(req.body);
+
+      const existingUser = await userService.findUserByEmail(data.email);
+
+      if (existingUser) {
+        return res.status(409).json({ message: "Email already exists" });
+      }
+
+      const created = await userService.createUser({
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        roleName: data.role,
       });
+
+      return res.status(201).json(created);
+
+    } catch (error) {
+      console.error("Error creating user:", error);
+      return res.status(400).json({ message: "Invalid request data" });
     }
   }
 
-  async updateUser(req: Request<{ id: string }>, res: Response) {
-    const { id } = req.params;
+  async updateUser(req: AuthRequest, res: Response) {
+    try {
 
-    const user = await userService.updateUser(id, req.body);
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      const { id } = userIdSchema.parse(req.params);
+
+      const updatedUser = await userService.updateUser(id, req.body);
+
+      return res.json(updatedUser);
+
+    } catch (error) {
+      console.error("Error updating user:", error);
+      return res.status(400).json({ message: "Invalid request" });
     }
-
-    return res.json(user);
   }
 
-  async deleteUser(req: Request<{ id: string }>, res: Response) {
-    const success = await userService.deleteUser(req.params.id);
+  async deleteUser(req: AuthRequest, res: Response) {
+    try {
 
-    if (!success) {
-      return res.status(404).json({ message: "User not found" });
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { id } = userIdSchema.parse(req.params);
+
+      const success = await userService.deleteUser(id);
+
+      if (!success) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.json({
+        message: "User deleted successfully",
+      });
+
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      return res.status(400).json({ message: "Invalid request" });
+    }
+  }
+
+  async updateMyProfile(req: AuthRequest, res: Response) {
+    try {
+
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const data = updateMyProfileSchema.parse(req.body);
+
+      const updated = await userService.updateMyProfile(req.user.id, {
+        name: data.name,
+      });
+
+      return res.json(updated);
+
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      return res.status(400).json({ message: "Invalid request data" });
+    }
+  }
+
+  async getManagers(req: AuthRequest, res: Response) {
+  try {
+
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
-    return res.status(200).json({ message: "User deleted successfully" });
+    const managers = await userService.getManagers();
+
+    return res.status(200).json({
+      data: managers,
+    });
+
+  } catch (error) {
+    console.error("Error fetching managers:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch managers",
+    });
   }
+}
+
+async getUnassignedUsers(req: AuthRequest, res: Response) {
+  try {
+
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (
+      req.user.role !== RoleName.ADMIN &&
+      req.user.role !== RoleName.MANAGER
+    ) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const users = await userService.getUnassignedUsers();
+
+    return res.status(200).json({
+      data: users,
+    });
+
+  } catch (error) {
+    console.error("Error fetching unassigned users:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch users",
+    });
+  }
+}
+
+async getUnassignedManagers(req: AuthRequest, res: Response) {
+  try {
+
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (req.user.role !== RoleName.ADMIN) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const managers = await userService.getUnassignedManagers();
+
+    return res.status(200).json({
+      data: managers,
+    });
+
+  } catch (error) {
+    console.error("Error fetching unassigned managers:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch managers",
+    });
+  }
+}
 }
