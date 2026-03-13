@@ -1,5 +1,6 @@
 import { Response } from "express";
 import { UserService } from "../services/user.service";
+import { AuditService } from "../services/audit.service";
 import { RoleName } from "../entities/role.entity";
 import { AuthRequest } from "../types/auth-request";
 import { AppDataSource } from "../config/data-source";
@@ -13,6 +14,7 @@ import {
 } from "../validators/user.validator";
 
 const userService = new UserService();
+const auditService = new AuditService();
 
 
 
@@ -134,13 +136,24 @@ export class UserController {
       }
 
       const created = await userService.createUser({
-        name: data.name,
-        email: data.email,
-        password: data.password,
-        roleName: data.role,
-      });
+    name: data.name,
+    email: data.email,
+    password: data.password,
+    roleName: data.role,
+    });
 
-      return res.status(201).json(created);
+    /**
+     * Audit log
+     */
+    await auditService.log({
+      action: "USER_CREATED",
+      actorId: req.user?.id,
+      entityType: "User",
+      entityId: created.id,
+      message: `Permissions updated for role ${RoleName}`,
+    });
+
+    return res.status(201).json(created);
 
     } catch (error) {
       console.error("Error creating user:", error);
@@ -158,6 +171,14 @@ export class UserController {
       const { id } = userIdSchema.parse(req.params);
 
       const updatedUser = await userService.updateUser(id, req.body);
+
+      await auditService.log({
+        action: "USER_UPDATED",
+        actorId: req.user.id,
+        entityType: "User",
+        entityId: id,
+        message: `User ${id} updated`,
+      });
 
       return res.json(updatedUser);
 
@@ -178,14 +199,21 @@ export class UserController {
 
       const success = await userService.deleteUser(id);
 
-      if (!success) {
-        return res.status(404).json({ message: "User not found" });
-      }
+        if (!success) {
+          return res.status(404).json({ message: "User not found" });
+        }
 
-      return res.json({
-        message: "User deleted successfully",
-      });
+        await auditService.log({
+          action: "USER_DELETED",
+          actorId: req.user.id,
+          entityType: "User",
+          entityId: id,
+          message:`User ${id} deleted`,
+        });
 
+        return res.json({
+          message: "User deleted successfully",
+        });
     } catch (error) {
       console.error("Error deleting user:", error);
       return res.status(400).json({ message: "Invalid request" });

@@ -30,6 +30,10 @@ email!: string;
 password!: string;
 
 
+@Column({ nullable: true })
+authProviderId?: string;
+
+
   @Column({
     type: "enum",
     enum: UserStatus,
@@ -65,16 +69,16 @@ password!: string;
   department?: Department | null;
 
   @Column({ type: "varchar", nullable: true })
-resetCode?: string | null;
+  resetCode?: string | null;
 
-@Column({ type: "timestamptz", nullable: true })
-resetCodeExpiry?: Date | null;
+  @Column({ type: "timestamptz", nullable: true })
+  resetCodeExpiry?: Date | null;
 
   @OneToMany(() => RefreshToken, (rt) => rt.user)
   refreshTokens!: RefreshToken[];
 
   @Column({ default: false })
-mustChangePassword!: boolean;
+  mustChangePassword!: boolean;
 
-@Column({ type: "timestamptz", nullable: true })
+  @Column({ type: "timestamptz", nullable: true })
 tempPasswordExpiry?: Date | null;}

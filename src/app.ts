@@ -8,7 +8,7 @@ import departmentRoutes from "./routes/department.routes";
 import { errorHandler } from "./middleware/errorHandler";
 import roleRoutes from "./routes/role.routes";
 import permissionRoutes from "./routes/permission.routes";
-// import auditRoutes from "./routes/audit.routes";
+import auditRoutes from "./routes/audit.routes";
 
 const app = express();
 
@@ -48,7 +48,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/permissions", permissionRoutes);
-// app.use("/api/audit", auditRoutes);
+app.use("/api/audit", auditRoutes);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({

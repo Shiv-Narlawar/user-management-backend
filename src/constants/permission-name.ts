@@ -21,4 +21,7 @@ export enum PermissionName {
   DEPARTMENT_UPDATE = "DEPARTMENT_UPDATE",
   DEPARTMENT_DELETE = "DEPARTMENT_DELETE",
   DEPARTMENT_ASSIGN_USER = "DEPARTMENT_ASSIGN_USER",
+
+  // ================= AUDIT =================
+  AUDIT_VIEW = "AUDIT_VIEW",
 }
