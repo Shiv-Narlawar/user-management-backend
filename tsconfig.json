@@ -9,8 +9,9 @@
     "emitDecoratorMetadata": true,
     "rootDir": "./",
     "outDir": "./dist",
-    "sourceMap": true
+    "sourceMap": true,
+    "types": ["node", "jest"]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

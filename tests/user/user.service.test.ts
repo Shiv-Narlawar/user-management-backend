@@ -15,12 +15,15 @@ describe("UserService", () => {
 
   beforeEach(() => {
     mockQueryBuilder = {
+      leftJoin: jest.fn().mockReturnThis(),
       leftJoinAndSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      getMany: jest.fn(),
       getManyAndCount: jest.fn(),
     };
 
@@ -46,6 +49,7 @@ describe("UserService", () => {
   describe("getAllUsers", () => {
     it("should return paginated users", async () => {
       const users = [{ id: "1", name: "Test" }];
+
       mockQueryBuilder.getManyAndCount.mockResolvedValue([users, 1]);
 
       const result = await userService.getAllUsers({ page: 1, limit: 10 });
@@ -77,6 +81,7 @@ describe("UserService", () => {
   describe("getUserById", () => {
     it("should return user", async () => {
       const user = { id: "1", name: "Test" };
+
       mockRepository.findOne.mockResolvedValue(user);
 
       const result = await userService.getUserById("1");
@@ -96,13 +101,15 @@ describe("UserService", () => {
   // GET MANAGERS
   describe("getManagers", () => {
     it("should return managers", async () => {
-      const managers = [{ id: "1", roleName: RoleName.MANAGER }];
-      mockRepository.find.mockResolvedValue(managers);
+      const managers = [{ id: "1", name: "Manager" }];
+
+      mockQueryBuilder.getMany.mockResolvedValue(managers);
 
       const result = await userService.getManagers();
 
+      expect(mockRepository.createQueryBuilder).toHaveBeenCalledWith("user");
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalled();
       expect(result).toEqual(managers);
-      expect(mockRepository.find).toHaveBeenCalled();
     });
   });
 
@@ -110,6 +117,7 @@ describe("UserService", () => {
   describe("findUserByEmail", () => {
     it("should return user by email", async () => {
       const user = { email: "test@test.com" };
+
       mockRepository.findOne.mockResolvedValue(user);
 
       const result = await userService.findUserByEmail("test@test.com");
@@ -214,6 +222,7 @@ describe("UserService", () => {
   describe("getUnassignedUsers", () => {
     it("should return users without department", async () => {
       const users = [{ id: "1", roleName: RoleName.USER }];
+
       mockRepository.find.mockResolvedValue(users);
 
       const result = await userService.getUnassignedUsers();

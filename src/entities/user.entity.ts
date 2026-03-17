@@ -26,8 +26,11 @@ export class User extends AppBaseEntity {
 @Column({ type: "varchar" })
 email!: string;
 
-  @Column({ type: "varchar", select: false })
-password!: string;
+ @Column({ type: "varchar", nullable: true, select: false })
+password!: string | null;
+
+@Column({ nullable: true, unique: true })
+auth0Sub?: string;
 
 
 @Column({ nullable: true })

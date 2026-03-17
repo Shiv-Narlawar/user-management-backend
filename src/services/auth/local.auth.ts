@@ -165,6 +165,14 @@ export class LocalAuthService implements AuthService {
       throw new ApiError(403, "Account is inactive");
     }
 
+    // Auth0-created users won't have a local password
+    if (!user.password) {
+      throw new ApiError(
+        401,
+        "This account uses Auth0 login. Please continue with Auth0."
+      );
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
@@ -233,6 +241,13 @@ export class LocalAuthService implements AuthService {
 
     if (!user) {
       throw new ApiError(404, "User not found");
+    }
+
+    if (!user.password) {
+      throw new ApiError(
+        400,
+        "This account uses Auth0 login and does not have a local password"
+      );
     }
 
     const ok = await bcrypt.compare(currentPassword, user.password);
@@ -368,6 +383,13 @@ export class LocalAuthService implements AuthService {
       throw new ApiError(404, "User not found");
     }
 
+    if (!user.password) {
+      throw new ApiError(
+        400,
+        "This account uses Auth0 login and does not support local password reset"
+      );
+    }
+
     return { message: "Email verified. Proceed to reset password." };
   }
 
@@ -383,12 +405,23 @@ export class LocalAuthService implements AuthService {
 
     this.validatePassword(newPassword);
 
-    const user = await this.userRepo.findOne({
-      where: { email: email.trim().toLowerCase() },
-    });
+    const user = await this.userRepo
+      .createQueryBuilder("user")
+      .addSelect("user.password")
+      .where("LOWER(user.email) = :email", {
+        email: email.trim().toLowerCase(),
+      })
+      .getOne();
 
     if (!user) {
       throw new ApiError(404, "User not found");
+    }
+
+    if (!user.password) {
+      throw new ApiError(
+        400,
+        "This account uses Auth0 login and does not support local password reset"
+      );
     }
 
     user.password = await bcrypt.hash(newPassword, 10);

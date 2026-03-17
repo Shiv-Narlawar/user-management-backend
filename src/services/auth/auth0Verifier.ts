@@ -1,21 +1,35 @@
 import jwt from "jsonwebtoken";
+import jwksClient from "jwks-rsa";
 
-export async function verifyAuth0Token(token: string): Promise<any> {
+const client = jwksClient({
+  jwksUri: `https://${process.env.AUTH0_DOMAIN}/.well-known/jwks.json`,
+});
 
-  try {
+function getKey(header: any, callback: any) {
+  client.getSigningKey(header.kid, function (err, key) {
+    const signingKey = key?.getPublicKey();
+    callback(null, signingKey);
+  });
+}
 
-    const decoded: any = jwt.decode(token);
+export function verifyAuth0Token(token: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    jwt.verify(
+      token,
+      getKey,
+      {
+        audience: process.env.AUTH0_AUDIENCE,
+        issuer: `https://${process.env.AUTH0_DOMAIN}/`,
+        algorithms: ["RS256"],
+      },
+      (err, decoded) => {
+        if (err) {
+          console.error("Auth0 token verification failed:", err);
+          return reject(err);
+        }
 
-    if (!decoded) {
-      throw new Error("Invalid token");
-    }
-
-    return decoded;
-
-  } catch (err) {
-
-    console.error("Auth0 decode failed:", err);
-    return null;
-
-  }
+        resolve(decoded);
+      }
+    );
+  });
 }

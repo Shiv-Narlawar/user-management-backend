@@ -9,6 +9,9 @@ import { User, UserStatus } from "../entities/user.entity";
 import { RoleName } from "../entities/role.entity";
 import { AuditLog } from "../entities/audit.entity";
 
+/* =========================================================
+   Extract Bearer Token
+========================================================= */
 
 function getBearerToken(req: AuthRequest): string | null {
   const authHeader = req.headers.authorization;
@@ -22,13 +25,36 @@ function getBearerToken(req: AuthRequest): string | null {
   return token;
 }
 
+/* =========================================================
+   Detect Auth0 Token
+========================================================= */
+
+function isAuth0Token(token: string): boolean {
+  try {
+    const payload = JSON.parse(
+      Buffer.from(token.split(".")[1], "base64").toString()
+    );
+
+    return (
+      payload.iss &&
+      typeof payload.iss === "string" &&
+      payload.iss.includes("auth0.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/* =========================================================
+   AUTH MIDDLEWARE
+========================================================= */
+
 export const authMiddleware = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ) => {
   try {
-
     const token = getBearerToken(req);
 
     if (!token) {
@@ -40,24 +66,20 @@ export const authMiddleware = async (
     let decoded: any = null;
     let providerUsed: "local" | "auth0" | null = null;
 
-    try {
+    /* =========================================================
+       DETECT TOKEN TYPE
+    ========================================================= */
+
+    if (isAuth0Token(token)) {
+      const authProvider = getAuthProvider();
+
+      decoded = await authProvider.validate(token);
+
+      if (decoded) providerUsed = "auth0";
+    } else {
       decoded = verifyAccessToken(token);
+
       if (decoded) providerUsed = "local";
-    } catch {
-      decoded = null;
-    }
-
-    
-    if (!decoded) {
-      try {
-        const authProvider = getAuthProvider();
-        decoded = await authProvider.validate(token);
-
-        if (decoded) providerUsed = "auth0";
-
-      } catch {
-        decoded = null;
-      }
     }
 
     if (!decoded) {
@@ -66,9 +88,12 @@ export const authMiddleware = async (
       });
     }
 
+    /* =========================================================
+       LOAD USER FROM DATABASE
+    ========================================================= */
+
     const userRepo = AppDataSource.getRepository(User);
     const auditRepo = AppDataSource.getRepository(AuditLog);
-
 
     const user = await userRepo.findOne({
       where: { id: decoded.id },
@@ -81,23 +106,30 @@ export const authMiddleware = async (
       });
     }
 
-    if (user.status !== UserStatus.ACTIVE) {
+    if (user.status === UserStatus.INACTIVE) {
       return res.status(403).json({
         message: "Account inactive",
       });
     }
 
+    /* =========================================================
+       ATTACH RBAC USER TO REQUEST
+    ========================================================= */
+
     req.user = {
       id: user.id,
       email: user.email,
-      role: user.roleName ?? RoleName.USER,
+      role: user.role?.name ?? RoleName.USER,
       permissions: (user.role?.permissions || []).map((p) => p.name),
       departmentId: user.departmentId ?? undefined,
     };
 
+    /* =========================================================
+       AUDIT LOGIN (AUTH0 ONLY)
+    ========================================================= */
+
     if (providerUsed === "auth0") {
       try {
-
         await auditRepo.save({
           action: "LOGIN_AUTH0",
           actorId: user.id,
@@ -107,21 +139,17 @@ export const authMiddleware = async (
           entityId: user.id,
           message: `${user.email} logged in using Auth0`,
         });
-
-      } catch (e) {
-        console.error("Audit log failed:", e);
+      } catch (err) {
+        console.error("Audit log failed:", err);
       }
     }
 
     next();
-
   } catch (error) {
-
     console.error("Auth middleware error:", error);
 
     return res.status(401).json({
       message: "Unauthorized",
     });
-
   }
 };

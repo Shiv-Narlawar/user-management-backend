@@ -2,6 +2,7 @@ import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/user.entity";
 import { IsNull } from "typeorm";
 import { RoleName } from "../entities/role.entity";
+import { Role } from "../entities/role.entity";
 
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
@@ -114,6 +115,8 @@ export class UserService {
 
   if (!user) return null;
 
+  const roleRepo = AppDataSource.getRepository(Role);
+
   const { deletedAt, roleName, ...safe } = data as Partial<User> & {
     deletedAt?: unknown;
   };
@@ -128,9 +131,21 @@ export class UserService {
     user.departmentId = safe.departmentId;
   }
 
-  // update role
+  // ⭐ FIX ROLE UPDATE
   if (roleName !== undefined) {
-    user.roleName = roleName;
+
+    const role = await roleRepo.findOne({
+  where: {
+    name: roleName as RoleName,
+  },
+});
+
+    if (!role) {
+      throw new Error("Role not found");
+    }
+
+    user.role = role;          // sets roleId
+    user.roleName = role.name; // keeps column synced
   }
 
   return this.userRepository.save(user);
