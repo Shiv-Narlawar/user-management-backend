@@ -9,26 +9,15 @@ import { User, UserStatus } from "../entities/user.entity";
 import { RoleName } from "../entities/role.entity";
 import { AuditLog } from "../entities/audit.entity";
 
-/* =========================================================
-   Extract Bearer Token
-========================================================= */
-
 function getBearerToken(req: AuthRequest): string | null {
   const authHeader = req.headers.authorization;
   if (!authHeader) return null;
 
-  if (!authHeader) return null;
-
   const [scheme, token] = authHeader.split(" ");
-
   if (scheme !== "Bearer" || !token) return null;
 
   return token;
 }
-
-/* =========================================================
-   Detect Auth0 Token
-========================================================= */
 
 function isAuth0Token(token: string): boolean {
   try {
@@ -45,10 +34,6 @@ function isAuth0Token(token: string): boolean {
     return false;
   }
 }
-
-/* =========================================================
-   AUTH MIDDLEWARE
-========================================================= */
 
 export const authMiddleware = async (
   req: AuthRequest,
@@ -67,19 +52,13 @@ export const authMiddleware = async (
     let decoded: any = null;
     let providerUsed: "local" | "auth0" | null = null;
 
-    /* =========================================================
-       DETECT TOKEN TYPE
-    ========================================================= */
-
+    // Detect provider
     if (isAuth0Token(token)) {
       const authProvider = getAuthProvider();
-
       decoded = await authProvider.validate(token);
-
       if (decoded) providerUsed = "auth0";
     } else {
       decoded = verifyAccessToken(token);
-
       if (decoded) providerUsed = "local";
     }
 
@@ -89,13 +68,10 @@ export const authMiddleware = async (
       });
     }
 
-    /* =========================================================
-       LOAD USER FROM DATABASE
-    ========================================================= */
-
     const userRepo = AppDataSource.getRepository(User);
     const auditRepo = AppDataSource.getRepository(AuditLog);
 
+    // Fetch user using normalized id
     const user = await userRepo.findOne({
       where: { id: decoded.id },
       relations: ["role", "role.permissions"],
@@ -113,10 +89,7 @@ export const authMiddleware = async (
       });
     }
 
-    /* =========================================================
-       ATTACH RBAC USER TO REQUEST
-    ========================================================= */
-
+    //  Attach user to request
     req.user = {
       id: user.id,
       email: user.email,
@@ -125,10 +98,7 @@ export const authMiddleware = async (
       departmentId: user.departmentId ?? undefined,
     };
 
-    /* =========================================================
-       AUDIT LOGIN (AUTH0 ONLY)
-    ========================================================= */
-
+    // Audit for Auth0 login
     if (providerUsed === "auth0") {
       try {
         await auditRepo.save({

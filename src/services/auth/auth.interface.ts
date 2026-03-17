@@ -1,6 +1,5 @@
 import { RoleName } from "../../entities/role.entity";
 import type { AccessPayload } from "./jwt";
-import { RoleName } from "../../entities/role.entity";
 
 export interface AuthUser {
   id: string;
