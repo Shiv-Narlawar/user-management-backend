@@ -15,6 +15,7 @@ import { AuditLog } from "../entities/audit.entity";
 
 function getBearerToken(req: AuthRequest): string | null {
   const authHeader = req.headers.authorization;
+  if (!authHeader) return null;
 
   if (!authHeader) return null;
 

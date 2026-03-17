@@ -320,6 +320,7 @@ export class LocalAuthService implements AuthService {
     });
 
     savedNew.tokenHash = this.hashToken(newRefreshToken);
+
     await this.refreshRepo.save(savedNew);
 
     const newAccessToken = signAccessToken({
