@@ -1,13 +1,103 @@
 import { AppDataSource } from "../config/data-source";
-import { User } from "../entities/user.entity";
+import { User, UserStatus } from "../entities/user.entity";
 import { IsNull } from "typeorm";
-import { RoleName } from "../entities/role.entity";
-import { Role } from "../entities/role.entity";
+import { RoleName, Role } from "../entities/role.entity";
 
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
+  private roleRepository = AppDataSource.getRepository(Role);
 
-  // ================= GET ALL USERS =================
+  // AUTH0 USER HANDLING
+
+  async findUserByAuth0Sub(sub: string) {
+    return this.userRepository.findOne({
+    where: { auth0Sub: sub, deletedAt: IsNull() },
+      relations: ["role", "role.permissions"],
+    });
+  }
+
+  async findUserByEmail(email: string) {
+    return this.userRepository.findOne({
+      where: { email, deletedAt: IsNull() },
+      relations: ["role", "role.permissions"],
+    });
+  }
+
+  async createUserFromAuth0(auth: {
+    sub: string;
+    email: string;
+    name?: string | null;
+  }) {
+    const defaultRole = await this.roleRepository.findOne({
+      where: { name: RoleName.USER },
+      relations: ["permissions"],
+    });
+
+    if (!defaultRole) {
+      throw new Error("Default role not found");
+    }
+
+    const user = this.userRepository.create({
+      name: auth.name ?? auth.email.split("@")[0],
+      email: auth.email,
+      auth0Sub: auth.sub,
+      role: defaultRole,
+      roleName: defaultRole.name,
+      status: UserStatus.ACTIVE,
+    });
+
+    return this.userRepository.save(user);
+  }
+
+  async findOrCreateUser(auth: {
+    sub: string;
+    email: string;
+    name?: string | null;
+  }) {
+    if (!auth.email) {
+      throw new Error("Email missing in token");
+    }
+
+    // Try finding by auth0Sub
+    let user = await this.findUserByAuth0Sub(auth.sub);
+
+    // If not found → try by email 
+    if (!user) {
+      user = await this.findUserByEmail(auth.email);
+
+      // If found by email but not linked → link it
+      if (user && !user.auth0Sub) {
+        user.auth0Sub = auth.sub;
+        user = await this.userRepository.save(user);
+      }
+    }
+
+    // If still not found → create
+    if (!user) {
+      user = await this.createUserFromAuth0({
+        sub: auth.sub,
+        email: auth.email,
+        name: auth.name,
+      });
+    }
+
+    // Check status
+    if (user.status === UserStatus.INACTIVE) {
+      throw new Error("Account inactive");
+    }
+
+    // Return normalized user
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role?.name ?? RoleName.USER,
+      permissions: (user.role?.permissions || []).map((p) => p.name),
+      departmentId: user.departmentId ?? undefined,
+    };
+  }
+
+
   async getAllUsers(params?: {
     search?: string;
     departmentId?: string;
@@ -18,7 +108,6 @@ export class UserService {
   }) {
     const page = params?.page && params.page > 0 ? params.page : 1;
     const limit = params?.limit && params.limit > 0 ? params.limit : 10;
-
     const sort = params?.sort === "ASC" ? "ASC" : "DESC";
 
     const qb = this.userRepository
@@ -36,12 +125,9 @@ export class UserService {
     }
 
     if (params?.role) {
-  qb.andWhere("user.roleName = :role", {
-    role: params.role,
-  });
-}
+      qb.andWhere("role.name = :role", { role: params.role });
+    }
 
-    // Department Filtering
     if (params?.departmentId) {
       qb.andWhere("user.departmentId = :departmentId", {
         departmentId: params.departmentId,
@@ -63,7 +149,6 @@ export class UserService {
     };
   }
 
-  // ================= GET USER BY ID =================
   async getUserById(id: string) {
     return this.userRepository.findOne({
       where: { id, deletedAt: IsNull() },
@@ -71,7 +156,6 @@ export class UserService {
     });
   }
 
-  // ================= GET MANAGERS =================
   async getManagers() {
     return this.userRepository
       .createQueryBuilder("user")
@@ -83,14 +167,6 @@ export class UserService {
       .getMany();
   }
 
-  // ================= FIND USER BY EMAIL =================
-  async findUserByEmail(email: string) {
-    return this.userRepository.findOne({
-      where: { email, deletedAt: IsNull() },
-    });
-  }
-
-  // ================= CREATE USER =================
   async createUser(data: Partial<User>) {
     const { deletedAt, ...safe } = data as Partial<User> & {
       deletedAt?: unknown;
@@ -105,53 +181,40 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
-  // ================= UPDATE USER =================
   async updateUser(id: string, data: Partial<User>) {
+    const user = await this.userRepository.findOne({
+      where: { id, deletedAt: IsNull() },
+      relations: ["role"],
+    });
 
-  const user = await this.userRepository.findOne({
-    where: { id, deletedAt: IsNull() },
-    relations: ["role"],
-  });
+    if (!user) return null;
 
-  if (!user) return null;
+    const { deletedAt, roleName, ...safe } = data as Partial<User> & {
+      deletedAt?: unknown;
+    };
 
-  const roleRepo = AppDataSource.getRepository(Role);
-
-  const { deletedAt, roleName, ...safe } = data as Partial<User> & {
-    deletedAt?: unknown;
-  };
-
-  // update status
-  if (safe.status !== undefined) {
-    user.status = safe.status;
-  }
-
-  // update department
-  if (safe.departmentId !== undefined) {
-    user.departmentId = safe.departmentId;
-  }
-
-  // ⭐ FIX ROLE UPDATE
-  if (roleName !== undefined) {
-
-    const role = await roleRepo.findOne({
-  where: {
-    name: roleName as RoleName,
-  },
-});
-
-    if (!role) {
-      throw new Error("Role not found");
+    if (safe.status !== undefined) {
+      user.status = safe.status;
     }
 
-    user.role = role;          // sets roleId
-    user.roleName = role.name; // keeps column synced
+    if (safe.departmentId !== undefined) {
+      user.departmentId = safe.departmentId;
+    }
+
+    if (roleName !== undefined) {
+      const role = await this.roleRepository.findOne({
+        where: { name: roleName as RoleName },
+      });
+
+      if (!role) throw new Error("Role not found");
+
+      user.role = role;
+      user.roleName = role.name;
+    }
+
+    return this.userRepository.save(user);
   }
 
-  return this.userRepository.save(user);
-}
-
-  // ================= DELETE USER =================
   async deleteUser(id: string) {
     const user = await this.userRepository.findOne({
       where: { id, deletedAt: IsNull() },
@@ -160,11 +223,9 @@ export class UserService {
     if (!user) return false;
 
     await this.userRepository.softRemove(user);
-
     return true;
   }
 
-  // ================= UPDATE MY PROFILE =================
   async updateMyProfile(userId: string, data: { name: string }) {
     const user = await this.userRepository.findOne({
       where: { id: userId, deletedAt: IsNull() },
@@ -186,7 +247,6 @@ export class UserService {
     };
   }
 
-  // ================= GET UNASSIGNED MANAGERS =================
   async getUnassignedManagers() {
     return this.userRepository
       .createQueryBuilder("user")
@@ -197,7 +257,6 @@ export class UserService {
       .getMany();
   }
 
-  // ================= GET UNASSIGNED USERS =================
   async getUnassignedUsers() {
     return this.userRepository.find({
       where: {
