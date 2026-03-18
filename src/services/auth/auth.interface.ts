@@ -1,5 +1,5 @@
-import type { AccessPayload } from "./jwt";
 import { RoleName } from "../../entities/role.entity";
+import type { AccessPayload } from "./jwt";
 
 export interface AuthUser {
   id: string;
@@ -8,6 +8,7 @@ export interface AuthUser {
   role: RoleName;
   status?: string;
   permissions?: string[];
+  departmentId?: string;
 }
 
 export interface AuthResponse {
@@ -19,33 +20,41 @@ export interface AuthResponse {
   user?: AuthUser;
   message?: string;
 
-  // optional error details
   errors?: any;
 }
 
 export interface AuthService {
-  login(email: string, password: string): Promise<AuthResponse>;
 
-  signup(
+  // ===== LOCAL AUTH =====
+
+  login?(email: string, password: string): Promise<AuthResponse>;
+
+  signup?(
     name: string,
     email: string,
     password: string,
     role: RoleName
   ): Promise<AuthResponse>;
 
-  forgotPassword(email: string): Promise<AuthResponse>;
+  forgotPassword?(email: string): Promise<AuthResponse>;
 
-  resetPassword(
+  resetPassword?(
     email: string,
     code: string,
     newPassword: string
   ): Promise<AuthResponse>;
 
-  forgotUsername(email: string): Promise<AuthResponse>;
+  forgotUsername?(email: string): Promise<AuthResponse>;
 
-  refresh(refreshToken: string): Promise<AuthResponse>;
+  refresh?(refreshToken: string): Promise<AuthResponse>;
 
-  logout(refreshToken: string): Promise<AuthResponse>;
+  logout?(refreshToken: string): Promise<AuthResponse>;
+
+  // ===== PROVIDER LOGIN (Auth0 / Google / etc) =====
+
+  loginWithProvider?(token: string): Promise<AuthResponse>;
+
+  // ===== TOKEN VALIDATION =====
 
   validate(token: string): Promise<AccessPayload | null>;
 }

@@ -11,6 +11,7 @@ import { AppDataSource } from "../../config/data-source";
 import { User, UserStatus } from "../../entities/user.entity";
 import { Role, RoleName } from "../../entities/role.entity";
 import { RefreshToken } from "../../entities/refresh-token.entity";
+import { Department } from "../../entities/department.entity";
 
 import bcrypt from "bcrypt";
 import crypto from "crypto";
@@ -20,6 +21,7 @@ export class LocalAuthService implements AuthService {
   private userRepo = AppDataSource.getRepository(User);
   private roleRepo = AppDataSource.getRepository(Role);
   private refreshRepo = AppDataSource.getRepository(RefreshToken);
+  private departmentRepo = AppDataSource.getRepository(Department);
 
   private hashToken(token: string) {
     return crypto.createHash("sha256").update(token).digest("hex");
@@ -31,17 +33,20 @@ export class LocalAuthService implements AuthService {
     }
   }
 
-  
-    // SIGNUP
-
+  // SIGNUP
   async signup(
     name: string,
     email: string,
     password: string,
     roleName: RoleName
   ): Promise<AuthResponse> {
-    if (!name?.trim()) throw new ApiError(400, "Name is required");
-    if (!email?.trim()) throw new ApiError(400, "Email is required");
+    if (!name?.trim()) {
+      throw new ApiError(400, "Name is required");
+    }
+
+    if (!email?.trim()) {
+      throw new ApiError(400, "Email is required");
+    }
 
     this.validatePassword(password);
 
@@ -68,18 +73,29 @@ export class LocalAuthService implements AuthService {
       relations: ["permissions"],
     });
 
-    if (!role) throw new ApiError(400, "Invalid role");
+    if (!role) {
+      throw new ApiError(400, "Invalid role");
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    let department: Department | null = null;
+
+    if (roleName === RoleName.MANAGER) {
+      department = await this.departmentRepo.findOne({
+        where: { name: "General Department" },
+      });
+    }
+
     const newUser = this.userRepo.create({
-  name: name.trim(),
-  email: normalizedEmail,
-  password: hashedPassword,
-  role,
-  roleName: role.name,
-  status: UserStatus.ACTIVE,
-});
+      name: name.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+      role,
+      roleName: role.name,
+      department: department ?? undefined,
+      status: UserStatus.ACTIVE,
+    });
 
     const savedUser = await this.userRepo.save(newUser);
 
@@ -98,6 +114,7 @@ export class LocalAuthService implements AuthService {
       email: savedUser.email,
       role: role.name,
       permissions,
+      departmentId: savedUser.departmentId ?? undefined,
     });
 
     const refreshToken = signRefreshToken({
@@ -109,7 +126,6 @@ export class LocalAuthService implements AuthService {
     await this.refreshRepo.save(savedRefresh);
 
     return {
-      message: "User registered successfully",
       token: accessToken,
       refreshToken,
       user: {
@@ -119,13 +135,12 @@ export class LocalAuthService implements AuthService {
         role: role.name,
         status: savedUser.status,
         permissions,
+        departmentId: savedUser.departmentId ?? undefined,
       },
     };
   }
 
- 
-    // LOGIN
-  
+  // LOGIN
   async login(email: string, password: string): Promise<AuthResponse> {
     if (!email?.trim() || !password) {
       throw new ApiError(400, "Email and password are required");
@@ -150,6 +165,14 @@ export class LocalAuthService implements AuthService {
       throw new ApiError(403, "Account is inactive");
     }
 
+    // Auth0-created users won't have a local password
+    if (!user.password) {
+      throw new ApiError(
+        401,
+        "This account uses Auth0 login. Please continue with Auth0."
+      );
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
@@ -171,6 +194,7 @@ export class LocalAuthService implements AuthService {
       email: user.email,
       role: user.role?.name ?? RoleName.USER,
       permissions,
+      departmentId: user.departmentId ?? undefined,
     });
 
     const refreshToken = signRefreshToken({
@@ -191,20 +215,20 @@ export class LocalAuthService implements AuthService {
         role: user.role?.name ?? RoleName.USER,
         status: user.status,
         permissions,
+        departmentId: user.departmentId ?? undefined,
       },
     };
   }
 
-  
-    // UPDATE PASSWORD
- 
-
+  // UPDATE PASSWORD
   async updatePassword(
     userId: string,
     currentPassword: string,
     newPassword: string
   ): Promise<AuthResponse> {
-    if (!userId) throw new ApiError(400, "User id is required");
+    if (!userId) {
+      throw new ApiError(400, "User id is required");
+    }
 
     this.validatePassword(newPassword);
 
@@ -215,14 +239,24 @@ export class LocalAuthService implements AuthService {
       .andWhere("user.deletedAt IS NULL")
       .getOne();
 
-    if (!user) throw new ApiError(404, "User not found");
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
+    if (!user.password) {
+      throw new ApiError(
+        400,
+        "This account uses Auth0 login and does not have a local password"
+      );
+    }
 
     const ok = await bcrypt.compare(currentPassword, user.password);
 
-    if (!ok) throw new ApiError(400, "Current password is incorrect");
+    if (!ok) {
+      throw new ApiError(400, "Current password is incorrect");
+    }
 
     user.password = await bcrypt.hash(newPassword, 10);
-
     await this.userRepo.save(user);
 
     await this.refreshRepo
@@ -235,16 +269,17 @@ export class LocalAuthService implements AuthService {
     return { message: "Password updated successfully" };
   }
 
-  
-    // REFRESH TOKEN
-  
-
+  // REFRESH TOKEN
   async refresh(refreshToken: string): Promise<AuthResponse> {
-    if (!refreshToken) throw new ApiError(400, "Refresh token is required");
+    if (!refreshToken) {
+      throw new ApiError(400, "Refresh token is required");
+    }
 
     const payload = verifyRefreshToken(refreshToken);
 
-    if (!payload) throw new ApiError(401, "Invalid refresh token");
+    if (!payload) {
+      throw new ApiError(401, "Invalid refresh token");
+    }
 
     const tokenHash = this.hashToken(refreshToken);
 
@@ -257,14 +292,15 @@ export class LocalAuthService implements AuthService {
       throw new ApiError(401, "Invalid refresh token");
     }
 
-    if (record.revokedAt) throw new ApiError(401, "Refresh token revoked");
+    if (record.revokedAt) {
+      throw new ApiError(401, "Refresh token revoked");
+    }
 
     if (record.expiresAt < new Date()) {
       throw new ApiError(401, "Refresh token expired");
     }
 
     const user = record.user;
-
     const permissions = (user.role?.permissions || []).map((p) => p.name);
 
     record.revokedAt = new Date();
@@ -292,6 +328,7 @@ export class LocalAuthService implements AuthService {
       email: user.email,
       role: user.role?.name ?? RoleName.USER,
       permissions,
+      departmentId: user.departmentId ?? undefined,
     });
 
     return {
@@ -304,20 +341,22 @@ export class LocalAuthService implements AuthService {
         role: user.role?.name ?? RoleName.USER,
         status: user.status,
         permissions,
+        departmentId: user.departmentId ?? undefined,
       },
     };
   }
 
- 
-    // LOGOUT
-  
-
+  // LOGOUT
   async logout(refreshToken: string): Promise<AuthResponse> {
-    if (!refreshToken) throw new ApiError(400, "Refresh token required");
+    if (!refreshToken) {
+      throw new ApiError(400, "Refresh token required");
+    }
 
     const payload = verifyRefreshToken(refreshToken);
 
-    if (!payload) throw new ApiError(401, "Invalid refresh token");
+    if (!payload) {
+      throw new ApiError(401, "Invalid refresh token");
+    }
 
     const record = await this.refreshRepo.findOne({
       where: { id: payload.jti },
@@ -331,43 +370,62 @@ export class LocalAuthService implements AuthService {
     return { message: "Logged out successfully" };
   }
 
-  
-    // FORGOT PASSWORD
- 
-
+  // FORGOT PASSWORD
   async forgotPassword(email: string): Promise<AuthResponse> {
-    if (!email?.trim()) throw new ApiError(400, "Email is required");
+    if (!email?.trim()) {
+      throw new ApiError(400, "Email is required");
+    }
 
     const user = await this.userRepo.findOne({
       where: { email: email.trim().toLowerCase() },
     });
 
-    if (!user) throw new ApiError(404, "User not found");
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
+    if (!user.password) {
+      throw new ApiError(
+        400,
+        "This account uses Auth0 login and does not support local password reset"
+      );
+    }
 
     return { message: "Email verified. Proceed to reset password." };
   }
 
-  
-    // RESET PASSWORD
- 
-
+  // RESET PASSWORD
   async resetPassword(
     email: string,
     _code: string,
     newPassword: string
   ): Promise<AuthResponse> {
-    if (!email?.trim()) throw new ApiError(400, "Email required");
+    if (!email?.trim()) {
+      throw new ApiError(400, "Email required");
+    }
 
     this.validatePassword(newPassword);
 
-    const user = await this.userRepo.findOne({
-      where: { email: email.trim().toLowerCase() },
-    });
+    const user = await this.userRepo
+      .createQueryBuilder("user")
+      .addSelect("user.password")
+      .where("LOWER(user.email) = :email", {
+        email: email.trim().toLowerCase(),
+      })
+      .getOne();
 
-    if (!user) throw new ApiError(404, "User not found");
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
+    if (!user.password) {
+      throw new ApiError(
+        400,
+        "This account uses Auth0 login and does not support local password reset"
+      );
+    }
 
     user.password = await bcrypt.hash(newPassword, 10);
-
     await this.userRepo.save(user);
 
     await this.refreshRepo
@@ -380,22 +438,22 @@ export class LocalAuthService implements AuthService {
     return { message: "Password updated successfully" };
   }
 
-  
-    // FORGOT USERNAME
-
+  // FORGOT USERNAME
   async forgotUsername(email: string): Promise<AuthResponse> {
+    const normalizedEmail = email.trim().toLowerCase();
+
     const user = await this.userRepo.findOne({
-      where: { email: email.trim().toLowerCase() },
+      where: { email: normalizedEmail },
     });
 
-    if (!user) throw new ApiError(404, "User not found");
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
 
     return { message: `Your username is ${user.name}` };
   }
 
-  
-    // VALIDATE TOKEN
-
+  // VALIDATE TOKEN
   async validate(token: string): Promise<AccessPayload | null> {
     return verifyAccessToken(token);
   }

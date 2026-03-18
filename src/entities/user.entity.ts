@@ -26,8 +26,15 @@ export class User extends AppBaseEntity {
 @Column({ type: "varchar" })
 email!: string;
 
-  @Column({ type: "varchar", select: false })
-password!: string;
+ @Column({ type: "varchar", nullable: true, select: false })
+password!: string | null;
+
+@Column({ nullable: true, unique: true })
+auth0Sub?: string;
+
+
+@Column({ nullable: true })
+authProviderId?: string;
 
 
   @Column({
@@ -65,16 +72,16 @@ password!: string;
   department?: Department | null;
 
   @Column({ type: "varchar", nullable: true })
-resetCode?: string | null;
+  resetCode?: string | null;
 
-@Column({ type: "timestamptz", nullable: true })
-resetCodeExpiry?: Date | null;
+  @Column({ type: "timestamptz", nullable: true })
+  resetCodeExpiry?: Date | null;
 
   @OneToMany(() => RefreshToken, (rt) => rt.user)
   refreshTokens!: RefreshToken[];
 
   @Column({ default: false })
-mustChangePassword!: boolean;
+  mustChangePassword!: boolean;
 
-@Column({ type: "timestamptz", nullable: true })
+  @Column({ type: "timestamptz", nullable: true })
 tempPasswordExpiry?: Date | null;}

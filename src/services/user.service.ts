@@ -2,6 +2,7 @@ import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/user.entity";
 import { IsNull } from "typeorm";
 import { RoleName } from "../entities/role.entity";
+import { Role } from "../entities/role.entity";
 
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
@@ -10,11 +11,15 @@ export class UserService {
   async getAllUsers(params?: {
     search?: string;
     departmentId?: string;
+    role?: RoleName;
     page?: number;
     limit?: number;
+    sort?: "ASC" | "DESC";
   }) {
     const page = params?.page && params.page > 0 ? params.page : 1;
     const limit = params?.limit && params.limit > 0 ? params.limit : 10;
+
+    const sort = params?.sort === "ASC" ? "ASC" : "DESC";
 
     const qb = this.userRepository
       .createQueryBuilder("user")
@@ -30,14 +35,20 @@ export class UserService {
       });
     }
 
-    // 🔐 Department Filtering (Controller decides department)
+    if (params?.role) {
+  qb.andWhere("user.roleName = :role", {
+    role: params.role,
+  });
+}
+
+    // Department Filtering
     if (params?.departmentId) {
       qb.andWhere("user.departmentId = :departmentId", {
         departmentId: params.departmentId,
       });
     }
 
-    qb.orderBy("user.createdAt", "DESC")
+    qb.orderBy("user.createdAt", sort)
       .skip((page - 1) * limit)
       .take(limit);
 
@@ -96,25 +107,49 @@ export class UserService {
 
   // ================= UPDATE USER =================
   async updateUser(id: string, data: Partial<User>) {
-    const user = await this.userRepository.findOne({
-      where: { id, deletedAt: IsNull() },
-      relations: ["role"],
-    });
 
-    if (!user) return null;
+  const user = await this.userRepository.findOne({
+    where: { id, deletedAt: IsNull() },
+    relations: ["role"],
+  });
 
-    const { deletedAt, ...safe } = data as Partial<User> & {
-      deletedAt?: unknown;
-    };
+  if (!user) return null;
 
-    Object.assign(user, safe);
+  const roleRepo = AppDataSource.getRepository(Role);
 
-    if (user.role) {
-      user.roleName = user.role.name;
+  const { deletedAt, roleName, ...safe } = data as Partial<User> & {
+    deletedAt?: unknown;
+  };
+
+  // update status
+  if (safe.status !== undefined) {
+    user.status = safe.status;
+  }
+
+  // update department
+  if (safe.departmentId !== undefined) {
+    user.departmentId = safe.departmentId;
+  }
+
+  // ⭐ FIX ROLE UPDATE
+  if (roleName !== undefined) {
+
+    const role = await roleRepo.findOne({
+  where: {
+    name: roleName as RoleName,
+  },
+});
+
+    if (!role) {
+      throw new Error("Role not found");
     }
 
-    return this.userRepository.save(user);
+    user.role = role;          // sets roleId
+    user.roleName = role.name; // keeps column synced
   }
+
+  return this.userRepository.save(user);
+}
 
   // ================= DELETE USER =================
   async deleteUser(id: string) {
@@ -150,16 +185,18 @@ export class UserService {
       status: saved.status,
     };
   }
-   
+
+  // ================= GET UNASSIGNED MANAGERS =================
   async getUnassignedManagers() {
-  return this.userRepository
-    .createQueryBuilder("user")
-    .leftJoin("department", "dept", "dept.managerId = user.id")
-    .where("user.roleName = :role", { role: RoleName.MANAGER })
-    .andWhere("dept.id IS NULL")
-    .select(["user.id", "user.name", "user.email"])
-    .getMany();
-}
+    return this.userRepository
+      .createQueryBuilder("user")
+      .leftJoin("department", "dept", "dept.managerId = user.id")
+      .where("user.roleName = :role", { role: RoleName.MANAGER })
+      .andWhere("dept.id IS NULL")
+      .select(["user.id", "user.name", "user.email"])
+      .getMany();
+  }
+
   // ================= GET UNASSIGNED USERS =================
   async getUnassignedUsers() {
     return this.userRepository.find({

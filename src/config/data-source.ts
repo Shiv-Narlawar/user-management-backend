@@ -9,6 +9,7 @@ import { Role } from "../entities/role.entity";
 import { Permission } from "../entities/permission.entity";
 import { RefreshToken } from "../entities/refresh-token.entity";
 import { Department } from "../entities/department.entity";
+import { AuditLog } from "../entities/audit.entity";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -25,7 +26,7 @@ export const AppDataSource = new DataSource({
 
   entities: isProd
     ? ["dist/src/entities/*.js"]
-    : [User, Role, Permission, RefreshToken, Department],
+    : [User, Role, Permission, RefreshToken, Department, AuditLog],
 
   migrations: isProd
     ? ["dist/src/migrations/*.js"]
