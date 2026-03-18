@@ -16,10 +16,6 @@ import {
 const userService = new UserService();
 const auditService = new AuditService();
 
-
-
-
-
 export class UserController {
 
   async getUsers(req: AuthRequest, res: Response) {
@@ -140,7 +136,6 @@ export class UserController {
       const created = await userService.createUser({
     name: data.name,
     email: data.email,
-    password: data.password,
     roleName: data.role,
     });
 
@@ -152,7 +147,7 @@ export class UserController {
       actorId: req.user?.id,
       entityType: "User",
       entityId: created.id,
-      message: `Permissions updated for role ${RoleName}`,
+      message: `User ${created.email} created with role ${created.roleName}`,
     });
 
     return res.status(201).json(created);
