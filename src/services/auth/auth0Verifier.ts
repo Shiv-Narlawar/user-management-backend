@@ -1,34 +1,47 @@
-import jwt from "jsonwebtoken";
+import jwt, { JwtHeader, SigningKeyCallback } from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 
+// env
+const domain = process.env.AUTH0_DOMAIN!;
+const audience = process.env.AUTH0_AUDIENCE!;
+
+// client
 const client = jwksClient({
-  jwksUri: `https://${process.env.AUTH0_DOMAIN}/.well-known/jwks.json`,
+  jwksUri: `https://${domain}/.well-known/jwks.json`,
 });
 
-function getKey(header: any, callback: any) {
-  client.getSigningKey(header.kid, function (err, key) {
+// key
+function getKey(header: JwtHeader, callback: SigningKeyCallback) {
+  if (!header.kid) {
+    return callback(new Error("Missing kid"), undefined);
+  }
+
+  client.getSigningKey(header.kid, (err, key) => {
+    if (err) return callback(err, undefined);
+
     const signingKey = key?.getPublicKey();
     callback(null, signingKey);
   });
 }
 
-export function verifyAuth0Token(token: string): Promise<any> {
+// verify
+export function verifyAuth0Token(token: string): Promise<jwt.JwtPayload> {
   return new Promise((resolve, reject) => {
     jwt.verify(
       token,
       getKey,
       {
-        audience: process.env.AUTH0_AUDIENCE,
-        issuer: `https://${process.env.AUTH0_DOMAIN}/`,
+        audience,
+        issuer: `https://${domain}/`,
         algorithms: ["RS256"],
       },
       (err, decoded) => {
-        if (err) {
-          console.error("Auth0 token verification failed:", err);
+        if (err || !decoded) {
+          console.error("auth0 verify error:", err);
           return reject(err);
         }
 
-        resolve(decoded);
+        resolve(decoded as jwt.JwtPayload);
       }
     );
   });

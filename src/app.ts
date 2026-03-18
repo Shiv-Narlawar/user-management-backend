@@ -61,7 +61,7 @@ app.use("/api/departments", departmentRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/permissions", permissionRoutes);
 app.use("/api/audit", auditRoutes);
-
+app.use("/api/auth", authRoutes);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({
