@@ -36,6 +36,12 @@ router.get(
 );
 
 router.post(
+  "/invite",
+  authorize(PermissionName.USER_INVITE),
+  userController.inviteUser.bind(userController)
+);
+
+router.post(
   "/",
   authorize(PermissionName.USER_CREATE),
   userController.createUser.bind(userController)

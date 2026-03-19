@@ -81,7 +81,11 @@ export class UserService {
       });
     }
 
-    // Check status
+    if (user.status === UserStatus.INVITED) {
+      user.status = UserStatus.ACTIVE;
+      user = await this.userRepository.save(user);
+    }
+
     if (user.status === UserStatus.INACTIVE) {
       throw new Error("Account inactive");
     }
@@ -177,6 +181,32 @@ export class UserService {
     if (user.role) {
       user.roleName = user.role.name;
     }
+
+    return this.userRepository.save(user);
+  }
+
+  async createInvitedUser(data: {
+    name: string;
+    email: string;
+    roleName: RoleName;
+    authProviderId?: string | null;
+  }) {
+    const role = await this.roleRepository.findOne({
+      where: { name: data.roleName },
+    });
+
+    if (!role) {
+      throw new Error("Role not found");
+    }
+
+    const user = new User();
+    user.name = data.name;
+    user.email = data.email;
+    user.role = role;
+    user.roleName = role.name;
+    user.status = UserStatus.INVITED;
+    user.authProviderId = data.authProviderId ?? undefined;
+    user.password = null;
 
     return this.userRepository.save(user);
   }

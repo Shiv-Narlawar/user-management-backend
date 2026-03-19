@@ -18,7 +18,19 @@ export const createUserSchema = z.object({
     .email("Valid email is required")
     .transform((v) => v.trim().toLowerCase()),
 
-  password: z.string().min(1, "Password is required"),
+  role: z.nativeEnum(RoleName),
+});
+
+export const inviteUserSchema = z.object({
+  name: z
+    .string()
+    .min(1, "Name is required")
+    .transform((v) => v.trim()),
+
+  email: z
+    .string()
+    .email("Valid email is required")
+    .transform((v) => v.trim().toLowerCase()),
 
   role: z.nativeEnum(RoleName),
 });

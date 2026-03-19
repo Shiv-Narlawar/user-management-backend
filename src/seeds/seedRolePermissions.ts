@@ -34,6 +34,7 @@ export const seedRolePermissions = async () => {
   if (manager) {
     manager.permissions = [
       permissionMap.get(PermissionName.USER_VIEW),
+      permissionMap.get(PermissionName.USER_INVITE),
       permissionMap.get(PermissionName.USER_UPDATE),
       permissionMap.get(PermissionName.DEPARTMENT_VIEW),
       permissionMap.get(PermissionName.DEPARTMENT_ASSIGN_USER),

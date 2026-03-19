@@ -4,5 +4,5 @@ export interface User {
   email: string;
   password: string; 
   role: string;
-  status: "ACTIVE" | "INACTIVE";
+  status: "ACTIVE" | "INACTIVE" | "INVITED";
 }

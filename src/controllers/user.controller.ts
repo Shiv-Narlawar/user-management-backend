@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { UserService } from "../services/user.service";
 import { AuditService } from "../services/audit.service";
+import { Auth0InviteService } from "../services/auth/auth0Invite.service";
 import { RoleName } from "../entities/role.entity";
 import { AuthRequest } from "../types/auth-request";
 import { AppDataSource } from "../config/data-source";
@@ -9,12 +10,14 @@ import { Department } from "../entities/department.entity";
 import {
   userIdSchema,
   createUserSchema,
+  inviteUserSchema,
   updateMyProfileSchema,
   getUsersQuerySchema,
 } from "../validators/user.validator";
 
 const userService = new UserService();
 const auditService = new AuditService();
+const auth0InviteService = new Auth0InviteService();
 
 export class UserController {
 
@@ -155,6 +158,51 @@ export class UserController {
     } catch (error) {
       console.error("Error creating user:", error);
       return res.status(400).json({ message: "Invalid request data" });
+    }
+  }
+
+  async inviteUser(req: AuthRequest, res: Response) {
+    try {
+      const data = inviteUserSchema.parse(req.body);
+
+      const existingUser = await userService.findUserByEmail(data.email);
+
+      if (existingUser) {
+        return res.status(409).json({ message: "Email already exists" });
+      }
+
+      const auth0User = await auth0InviteService.createOrGetDatabaseUser({
+        email: data.email,
+        name: data.name,
+      });
+
+      const invitedUser = await userService.createInvitedUser({
+        name: data.name,
+        email: data.email,
+        roleName: data.role,
+        authProviderId: auth0User.user_id,
+      });
+
+      await auth0InviteService.sendInviteEmail(data.email);
+
+      await auditService.log({
+        action: "USER_INVITED",
+        actorId: req.user?.id,
+        entityType: "User",
+        entityId: invitedUser.id,
+        message: `Invitation sent to ${invitedUser.email} with role ${invitedUser.roleName}`,
+      });
+
+      return res.status(201).json({
+        message: "Invite sent successfully",
+        user: invitedUser,
+      });
+    } catch (error) {
+      console.error("Error inviting user:", error);
+      return res.status(400).json({
+        message:
+          error instanceof Error ? error.message : "Failed to invite user",
+      });
     }
   }
 

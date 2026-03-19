@@ -2,6 +2,7 @@ export enum PermissionName {
   // ================= USER =================
   USER_VIEW = "USER_VIEW",
   USER_CREATE = "USER_CREATE",
+  USER_INVITE = "USER_INVITE",
   USER_UPDATE = "USER_UPDATE",
   USER_DELETE = "USER_DELETE",
 
