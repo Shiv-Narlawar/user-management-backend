@@ -7,27 +7,12 @@ export class UserService {
   private userRepository = AppDataSource.getRepository(User);
   private roleRepository = AppDataSource.getRepository(Role);
 
-  // AUTH0 USER HANDLING
-
-  async findUserByAuth0Sub(sub: string) {
-    return this.userRepository.findOne({
-    where: { auth0Sub: sub, deletedAt: IsNull() },
-      relations: ["role", "role.permissions"],
-    });
-  }
-
-  async findUserByEmail(email: string) {
-    return this.userRepository.findOne({
-      where: { email, deletedAt: IsNull() },
-      relations: ["role", "role.permissions"],
-    });
-  }
-
+  // ADD THIS METHOD 
   async createUserFromAuth0(auth: {
     sub: string;
     email: string;
     name?: string | null;
-  }) {
+  }): Promise<User> {
     const defaultRole = await this.roleRepository.findOne({
       where: { name: RoleName.USER },
       relations: ["permissions"],
@@ -49,6 +34,15 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
+  async findUserByEmail(email: string) {
+  return this.userRepository.findOne({
+    where: { email, deletedAt: IsNull() },
+    relations: ["role", "role.permissions"],
+  });
+}
+
+  // AUTH0 USER HANDLING
+
   async findOrCreateUser(auth: {
     sub: string;
     email: string;
@@ -58,21 +52,29 @@ export class UserService {
       throw new Error("Email missing in token");
     }
 
-    // Try finding by auth0Sub
-    let user = await this.findUserByAuth0Sub(auth.sub);
+    let user: User | null = await this.userRepository.findOne({
+      where: { auth0Sub: auth.sub },
+      withDeleted: true,
+      relations: ["role", "role.permissions"],
+    });
 
-    // If not found → try by email 
     if (!user) {
-      user = await this.findUserByEmail(auth.email);
+      user = await this.userRepository.findOne({
+        where: { email: auth.email },
+        withDeleted: true,
+        relations: ["role", "role.permissions"],
+      });
 
-      // If found by email but not linked → link it
       if (user && !user.auth0Sub) {
         user.auth0Sub = auth.sub;
         user = await this.userRepository.save(user);
       }
     }
 
-    // If still not found → create
+    if (user && user.deletedAt) {
+      throw new Error("Account has been deleted");
+    }
+
     if (!user) {
       user = await this.createUserFromAuth0({
         sub: auth.sub,
@@ -81,12 +83,14 @@ export class UserService {
       });
     }
 
-    // Check status
+    if (!user) {
+      throw new Error("User creation failed");
+    }
+
     if (user.status === UserStatus.INACTIVE) {
       throw new Error("Account inactive");
     }
 
-    // Return normalized user
     return {
       id: user.id,
       email: user.email,
@@ -96,7 +100,6 @@ export class UserService {
       departmentId: user.departmentId ?? undefined,
     };
   }
-
 
   async getAllUsers(params?: {
     search?: string;
