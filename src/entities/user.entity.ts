@@ -15,32 +15,31 @@ import { Department } from "./department.entity";
 export enum UserStatus {
   ACTIVE = "ACTIVE",
   INACTIVE = "INACTIVE",
+  INVITED = "INVITED", // ✅ added only this
 }
 
 @Entity()
 export class User extends AppBaseEntity {
-  @Column()
+  @Column({ nullable: true }) // ✅ made nullable (only change)
   name!: string;
 
   @Index({ unique: true })
-@Column({ type: "varchar" })
-email!: string;
+  @Column({ type: "varchar" })
+  email!: string;
 
- @Column({ type: "varchar", nullable: true, select: false })
-password!: string | null;
+  @Column({ type: "varchar", nullable: true, select: false })
+  password!: string | null;
 
-@Column({ nullable: true, unique: true })
-auth0Sub?: string;
+  @Column({ nullable: true, unique: true })
+  auth0Sub?: string;
 
-
-@Column({ nullable: true })
-authProviderId?: string;
-
+  @Column({ nullable: true })
+  authProviderId?: string;
 
   @Column({
     type: "enum",
     enum: UserStatus,
-    default: UserStatus.ACTIVE,
+    default: UserStatus.INVITED, // ✅ changed default only
   })
   status!: UserStatus;
 
@@ -84,4 +83,5 @@ authProviderId?: string;
   mustChangePassword!: boolean;
 
   @Column({ type: "timestamptz", nullable: true })
-tempPasswordExpiry?: Date | null;}
+  tempPasswordExpiry?: Date | null;
+}

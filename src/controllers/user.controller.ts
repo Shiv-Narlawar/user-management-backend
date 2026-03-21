@@ -5,7 +5,7 @@ import { RoleName } from "../entities/role.entity";
 import { AuthRequest } from "../types/auth-request";
 import { AppDataSource } from "../config/data-source";
 import { Department } from "../entities/department.entity";
-
+import { UserStatus } from "../entities/user.entity";
 import {
   userIdSchema,
   createUserSchema,
@@ -294,4 +294,46 @@ export class UserController {
       return res.status(500).json({ message: "Failed to fetch managers" });
     }
   }
+
+
+  async inviteUser(req: AuthRequest, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (req.user.role !== RoleName.ADMIN) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const data = createUserSchema.parse(req.body);
+
+    const existingUser = await userService.findUserByEmail(data.email);
+
+    if (existingUser) {
+      return res.status(409).json({ message: "Email already exists" });
+    }
+
+    const invitedUser = await userService.createUser({
+      name: data.name ?? null,
+      email: data.email,
+      roleName: data.role,
+      status: UserStatus.INVITED // 🔥 important
+    });
+
+    await auditService.log({
+      action: "USER_INVITED",
+      actorId: req.user.id,
+      entityType: "User",
+      entityId: invitedUser.id,
+      message: `User ${invitedUser.email} invited with role ${invitedUser.roleName}`,
+    });
+
+    return res.status(201).json(invitedUser);
+
+  } catch (error) {
+    console.error("Error inviting user:", error);
+    return res.status(400).json({ message: "Invalid request data" });
+  }
+}
 }

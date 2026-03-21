@@ -41,6 +41,12 @@ router.post(
   userController.createUser.bind(userController)
 );
 
+router.post(
+  "/invite",
+  authorize(PermissionName.USER_CREATE), 
+  userController.inviteUser.bind(userController)
+);
+
 router.patch(
   "/me",
   userController.updateMyProfile.bind(userController)

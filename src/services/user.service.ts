@@ -35,14 +35,13 @@ export class UserService {
   }
 
   async findUserByEmail(email: string) {
-  return this.userRepository.findOne({
-    where: { email, deletedAt: IsNull() },
-    relations: ["role", "role.permissions"],
-  });
-}
+    return this.userRepository.findOne({
+      where: { email, deletedAt: IsNull() },
+      relations: ["role", "role.permissions"],
+    });
+  }
 
   // AUTH0 USER HANDLING
-
   async findOrCreateUser(auth: {
     sub: string;
     email: string;
@@ -270,5 +269,18 @@ export class UserService {
       select: ["id", "name", "email", "roleName"],
       order: { name: "ASC" },
     });
+  }
+
+  // 🔥 NEW METHODS (SAFE ADDITIONS ONLY)
+
+  async findByEmail(email: string) {
+    return this.userRepository.findOne({
+      where: { email, deletedAt: IsNull() },
+      relations: ["role", "role.permissions"],
+    });
+  }
+
+  async save(user: User) {
+    return this.userRepository.save(user);
   }
 }

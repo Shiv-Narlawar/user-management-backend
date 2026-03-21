@@ -2,6 +2,7 @@ import { Response, NextFunction } from "express";
 import { AuthRequest } from "../types/auth-request";
 import { verifyAuth0Token } from "../services/auth/auth0Verifier";
 import { UserService } from "../services/user.service";
+import { UserStatus } from "../entities/user.entity"; // ✅ added
 
 const userService = new UserService();
 
@@ -45,11 +46,33 @@ export const authMiddleware = async (
       });
     }
 
-    const user = await userService.findOrCreateUser({
-      sub,
-      email,
-      name,
-    });
+    //try to find existing user
+    let user: any = await userService.findByEmail(email);
+
+    if (!user) {
+      user = await userService.findOrCreateUser({
+        sub,
+        email,
+        name,
+      });
+    } else {
+      //  INVITE FLOW LOGIC
+
+      // block inactive users
+      if (user.status === UserStatus.INACTIVE) {
+        return res.status(403).json({
+          message: "Account inactive",
+        });
+      }
+
+      //  first login for invited user
+      if (!user.auth0Sub) {
+        user.auth0Sub = sub;
+        user.status = UserStatus.ACTIVE;
+
+        await userService.save(user);
+      }
+    }
 
     // attach normalized user
     req.user = user;
@@ -58,7 +81,6 @@ export const authMiddleware = async (
   } catch (error: any) {
     console.error("Auth middleware error:", error);
 
-    // handle known errors
     if (error.message === "Account inactive") {
       return res.status(403).json({ message: "Account inactive" });
     }
