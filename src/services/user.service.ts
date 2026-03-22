@@ -2,10 +2,12 @@ import { AppDataSource } from "../config/data-source";
 import { User, UserStatus } from "../entities/user.entity";
 import { IsNull } from "typeorm";
 import { RoleName, Role } from "../entities/role.entity";
+import { Department } from "../entities/department.entity";
 
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
   private roleRepository = AppDataSource.getRepository(Role);
+  private departmentRepository = AppDataSource.getRepository(Department);
 
   // ADD THIS METHOD 
   async createUserFromAuth0(auth: {
@@ -196,6 +198,31 @@ export class UserService {
       deletedAt?: unknown;
     };
 
+    const originalRoleName = user.roleName ?? null;
+    const originalDepartmentId = user.departmentId ?? null;
+    const nextDepartmentId =
+      safe.departmentId !== undefined ? safe.departmentId ?? null : originalDepartmentId;
+    const nextRoleName =
+      roleName !== undefined ? (roleName as RoleName) : originalRoleName;
+    let targetDepartment: Department | null = null;
+
+    if (nextRoleName === RoleName.MANAGER && nextDepartmentId) {
+      targetDepartment = await this.departmentRepository.findOne({
+        where: { id: nextDepartmentId },
+      });
+
+      if (!targetDepartment) {
+        throw new Error("Department not found");
+      }
+
+      if (
+        targetDepartment.managerId &&
+        targetDepartment.managerId !== user.id
+      ) {
+        throw new Error("Selected department already has a manager");
+      }
+    }
+
     if (safe.status !== undefined) {
       user.status = safe.status;
     }
@@ -215,7 +242,44 @@ export class UserService {
       user.roleName = role.name;
     }
 
-    return this.userRepository.save(user);
+    const savedUser = await this.userRepository.save(user);
+
+    const managedDepartment = await this.departmentRepository.findOne({
+      where: { managerId: savedUser.id },
+    });
+
+    if (nextRoleName !== RoleName.MANAGER) {
+      if (managedDepartment) {
+        managedDepartment.managerId = null;
+        await this.departmentRepository.save(managedDepartment);
+      }
+
+      return savedUser;
+    }
+
+    if (!nextDepartmentId) {
+      if (managedDepartment) {
+        managedDepartment.managerId = null;
+        await this.departmentRepository.save(managedDepartment);
+      }
+
+      return savedUser;
+    }
+
+    if (
+      managedDepartment &&
+      managedDepartment.id !== targetDepartment?.id
+    ) {
+      managedDepartment.managerId = null;
+      await this.departmentRepository.save(managedDepartment);
+    }
+
+    if (targetDepartment) {
+      targetDepartment.managerId = savedUser.id;
+      await this.departmentRepository.save(targetDepartment);
+    }
+
+    return savedUser;
   }
 
   async deleteUser(id: string) {
@@ -224,6 +288,15 @@ export class UserService {
     });
 
     if (!user) return false;
+
+    const managedDepartment = await this.departmentRepository.findOne({
+      where: { managerId: user.id },
+    });
+
+    if (managedDepartment) {
+      managedDepartment.managerId = null;
+      await this.departmentRepository.save(managedDepartment);
+    }
 
     await this.userRepository.softRemove(user);
     return true;
@@ -255,8 +328,10 @@ export class UserService {
       .createQueryBuilder("user")
       .leftJoin("department", "dept", "dept.managerId = user.id")
       .where("user.roleName = :role", { role: RoleName.MANAGER })
+      .andWhere("user.deletedAt IS NULL")
       .andWhere("dept.id IS NULL")
       .select(["user.id", "user.name", "user.email"])
+      .orderBy("user.name", "ASC")
       .getMany();
   }
 

@@ -92,6 +92,11 @@ export class DepartmentController {
 
       const savedDepartment = await this.deptRepo.save(department);
 
+      if (manager) {
+        manager.departmentId = savedDepartment.id;
+        await this.userRepo.save(manager);
+      }
+
       // ✅ Audit log
       await this.auditService.log({
         action: "DEPARTMENT_CREATED",
@@ -181,6 +186,8 @@ export class DepartmentController {
             });
           }
 
+          manager.departmentId = department.id;
+          await this.userRepo.save(manager);
           department.managerId = managerId;
         }
       }
@@ -284,6 +291,19 @@ export class DepartmentController {
         });
       }
 
+      if (user.roleName === RoleName.MANAGER) {
+        const managedDepartment = await this.deptRepo.findOne({
+          where: { managerId: user.id },
+        });
+
+        if (managedDepartment && managedDepartment.id !== department.id) {
+          return res.status(400).json({
+            message:
+              "Assigned department manager cannot be added as a member of another department",
+          });
+        }
+      }
+
       user.departmentId = department.id;
       await this.userRepo.save(user);
 
@@ -323,6 +343,17 @@ export class DepartmentController {
         return res.status(404).json({
           message: "User not found",
         });
+      }
+
+      if (user.roleName === RoleName.MANAGER) {
+        const managedDepartment = await this.deptRepo.findOne({
+          where: { managerId: user.id },
+        });
+
+        if (managedDepartment) {
+          managedDepartment.managerId = null;
+          await this.deptRepo.save(managedDepartment);
+        }
       }
 
       user.departmentId = null;
