@@ -18,9 +18,9 @@ export const createUserSchema = z.object({
     .email("Valid email is required")
     .transform((v) => v.trim().toLowerCase()),
 
-  password: z.string().min(1, "Password is required"),
-
   role: z.nativeEnum(RoleName),
+
+  departmentId: z.string().uuid("Invalid department id").optional(),
 });
 
 // ================= UPDATE PROFILE =================
