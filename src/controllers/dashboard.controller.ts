@@ -35,14 +35,14 @@ export class DashboardController {
               users: 0,
             });
           }
-
+        
           departmentId = myDept.id;
         } else {
           // USER -> use own departmentId
           const me = await this.userRepo.findOne({
             where: { id: req.user.id, deletedAt: IsNull() },
           });
-
+             
           if (!me) {
             return res.status(401).json({ message: "User not found" });
           }

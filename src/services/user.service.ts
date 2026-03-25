@@ -3,13 +3,15 @@ import { User, UserStatus } from "../entities/user.entity";
 import { IsNull } from "typeorm";
 import { RoleName, Role } from "../entities/role.entity";
 import { Department } from "../entities/department.entity";
+import { Auth0ManagementService } from "./auth/auth0Management.service";
 
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
   private roleRepository = AppDataSource.getRepository(Role);
   private departmentRepository = AppDataSource.getRepository(Department);
+  private auth0ManagementService = new Auth0ManagementService();
 
-  // ADD THIS METHOD 
+  //CreateUser
   async createUserFromAuth0(auth: {
     sub: string;
     email: string;
@@ -37,14 +39,12 @@ export class UserService {
   }
 
   async findUserByEmail(email: string) {
-  return this.userRepository.findOne({
-    where: { email, deletedAt: IsNull() },
-    relations: ["role", "role.permissions"],
-  });
-}
-
-  // AUTH0 USER HANDLING
-
+    return this.userRepository.findOne({
+      where: { email, deletedAt: IsNull() },
+      relations: ["role", "role.permissions"],
+    });
+  }
+  //FindorCreateUser
   async findOrCreateUser(auth: {
     sub: string;
     email: string;
@@ -186,6 +186,74 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
+  async createAdminUser(data: {
+    name: string;
+    email: string;
+    roleName: RoleName;
+    departmentId?: string;
+  }) {
+    const role = await this.roleRepository.findOne({
+      where: { name: data.roleName },
+      relations: ["permissions"],
+    });
+
+    if (!role) {
+      throw new Error("Role not found");
+    }
+
+    let department: Department | null = null;
+
+    if (data.departmentId) {
+      department = await this.departmentRepository.findOne({
+        where: { id: data.departmentId },
+      });
+
+      if (!department) {
+        throw new Error("Department not found");
+      }
+
+      if (data.roleName === RoleName.MANAGER && department.managerId) {
+        throw new Error("Selected department already has a manager");
+      }
+    }
+
+    const auth0User = await this.auth0ManagementService.createUser({
+      name: data.name,
+      email: data.email,
+    });
+
+    try {
+      const createdUser = await this.createUser({
+        name: data.name,
+        email: data.email,
+        auth0Sub: auth0User.user_id,
+        role,
+        roleName: role.name,
+        departmentId: data.departmentId ?? null,
+        status: UserStatus.ACTIVE,
+      });
+
+      if (data.roleName === RoleName.MANAGER && department) {
+        department.managerId = createdUser.id;
+        await this.departmentRepository.save(department);
+      }
+
+
+      await this.auth0ManagementService.sendPasswordSetupEmail(data.email);
+
+      return {
+        user: createdUser,
+        invitation: {
+          emailSent: true,
+          appLoginLink: this.auth0ManagementService.getAppLoginUrl(),
+        },
+      };
+    } catch (error) {
+      await this.auth0ManagementService.deleteUser(auth0User.user_id);
+      throw error;
+    }
+  }
+
   async updateUser(id: string, data: Partial<User>) {
     const user = await this.userRepository.findOne({
       where: { id, deletedAt: IsNull() },
@@ -200,8 +268,9 @@ export class UserService {
 
     const originalRoleName = user.roleName ?? null;
     const originalDepartmentId = user.departmentId ?? null;
-    const nextDepartmentId =
-      safe.departmentId !== undefined ? safe.departmentId ?? null : originalDepartmentId;
+    const nextDepartmentId = safe.departmentId !== undefined
+      ? safe.departmentId ?? null
+      : originalDepartmentId;
     const nextRoleName =
       roleName !== undefined ? (roleName as RoleName) : originalRoleName;
     let targetDepartment: Department | null = null;

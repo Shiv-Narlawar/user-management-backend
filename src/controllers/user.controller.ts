@@ -130,25 +130,29 @@ export class UserController {
         return res.status(409).json({ message: "Email already exists" });
       }
 
-      const created = await userService.createUser({
+      const created = await userService.createAdminUser({
         name: data.name,
         email: data.email,
         roleName: data.role,
+        departmentId: data.departmentId,
       });
 
       await auditService.log({
         action: "USER_CREATED",
         actorId: req.user?.id,
         entityType: "User",
-        entityId: created.id,
-        message: `User ${created.email} created with role ${created.roleName}`,
+        entityId: created.user.id,
+        message: `User ${created.user.email} created with role ${created.user.roleName}`,
       });
 
       return res.status(201).json(created);
 
     } catch (error) {
       console.error("Error creating user:", error);
-      return res.status(400).json({ message: "Invalid request data" });
+      const message =
+        error instanceof Error ? error.message : "Invalid request data";
+
+      return res.status(400).json({ message });
     }
   }
 
