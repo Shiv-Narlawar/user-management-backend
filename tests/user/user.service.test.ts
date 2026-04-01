@@ -1,6 +1,7 @@
 import { UserService } from "../../src/services/user.service";
 import { AppDataSource } from "../../src/config/data-source";
 import { RoleName } from "../../src/entities/role.entity";
+import { Auth0ManagementService } from "../../src/services/auth/auth0Management.service";
 
 jest.mock("../../src/config/data-source", () => ({
   AppDataSource: {
@@ -8,10 +9,22 @@ jest.mock("../../src/config/data-source", () => ({
   },
 }));
 
+jest.mock("../../src/services/auth/auth0Management.service", () => ({
+  Auth0ManagementService: jest.fn().mockImplementation(() => ({
+    createUser: jest.fn(),
+    deleteUser: jest.fn(),
+    sendPasswordSetupEmail: jest.fn(),
+    getAppLoginUrl: jest.fn(),
+  })),
+}));
+
 describe("UserService", () => {
   let userService: UserService;
   let mockRepository: any;
+  let mockRoleRepository: any;
+  let mockDepartmentRepository: any;
   let mockQueryBuilder: any;
+  let mockAuth0ManagementService: any;
 
   beforeEach(() => {
     mockQueryBuilder = {
@@ -36,9 +49,24 @@ describe("UserService", () => {
       softRemove: jest.fn(),
     };
 
-    (AppDataSource.getRepository as jest.Mock).mockReturnValue(mockRepository);
+    mockRoleRepository = {
+      findOne: jest.fn(),
+    };
+
+    mockDepartmentRepository = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      save: jest.fn(),
+    };
+
+    (AppDataSource.getRepository as jest.Mock)
+      .mockReturnValueOnce(mockRepository)
+      .mockReturnValueOnce(mockRoleRepository)
+      .mockReturnValueOnce(mockDepartmentRepository);
 
     userService = new UserService();
+    mockAuth0ManagementService = (Auth0ManagementService as jest.Mock).mock
+      .results[0].value;
   });
 
   afterEach(() => {
@@ -139,6 +167,87 @@ describe("UserService", () => {
 
       expect(mockRepository.create).toHaveBeenCalledWith(data);
       expect(result).toEqual(savedUser);
+    });
+  });
+
+  describe("createAdminUser", () => {
+    it("should create user in Auth0 and database", async () => {
+      const role = { id: "role-1", name: RoleName.USER, permissions: [] };
+      const auth0User = { user_id: "auth0|123" };
+      const dbUser = {
+        name: "John",
+        email: "john@test.com",
+        auth0Sub: auth0User.user_id,
+        role,
+        roleName: RoleName.USER,
+        departmentId: null,
+        status: "ACTIVE",
+      };
+      const savedUser = { id: "1", ...dbUser };
+
+      mockRoleRepository.findOne.mockResolvedValue(role);
+      mockAuth0ManagementService.createUser.mockResolvedValue(auth0User);
+      mockAuth0ManagementService.sendPasswordSetupEmail.mockResolvedValue(
+        undefined
+      );
+      mockAuth0ManagementService.getAppLoginUrl.mockReturnValue(
+        "https://app.example.com/login"
+      );
+      mockRepository.create.mockReturnValue(dbUser);
+      mockRepository.save.mockResolvedValue(savedUser);
+
+      const result = await userService.createAdminUser({
+        name: "John",
+        email: "john@test.com",
+        roleName: RoleName.USER,
+      });
+
+      expect(mockAuth0ManagementService.createUser).toHaveBeenCalledWith({
+        name: "John",
+        email: "john@test.com",
+      });
+      expect(mockAuth0ManagementService.sendPasswordSetupEmail).toHaveBeenCalledWith(
+        "john@test.com"
+      );
+      expect(mockRepository.save).toHaveBeenCalled();
+      expect(result).toEqual({
+        user: savedUser,
+        invitation: {
+          emailSent: true,
+          appLoginLink: "https://app.example.com/login",
+        },
+      });
+    });
+
+    it("should rollback Auth0 user if database save fails", async () => {
+      const role = { id: "role-1", name: RoleName.USER, permissions: [] };
+      const auth0User = { user_id: "auth0|123" };
+      const dbUser = {
+        name: "John",
+        email: "john@test.com",
+        auth0Sub: auth0User.user_id,
+        role,
+        roleName: RoleName.USER,
+        departmentId: null,
+        status: "ACTIVE",
+      };
+
+      mockRoleRepository.findOne.mockResolvedValue(role);
+      mockAuth0ManagementService.createUser.mockResolvedValue(auth0User);
+      mockRepository.create.mockReturnValue(dbUser);
+      mockRepository.save.mockRejectedValue(new Error("DB failure"));
+
+      await expect(
+        userService.createAdminUser({
+          name: "John",
+          email: "john@test.com",
+          roleName: RoleName.USER,
+        })
+      ).rejects.toThrow("DB failure");
+
+      expect(mockAuth0ManagementService.deleteUser).toHaveBeenCalledWith(
+        auth0User.user_id
+      );
     });
   });
 
