@@ -160,7 +160,7 @@ export class UserService {
       relations: ["role"],
     });
   }
-
+  //Managers
   async getManagers() {
     return this.userRepository
       .createQueryBuilder("user")
@@ -185,7 +185,7 @@ export class UserService {
 
     return this.userRepository.save(user);
   }
-
+  //AdminUser
   async createAdminUser(data: {
     name: string;
     email: string;
@@ -216,7 +216,6 @@ export class UserService {
         throw new Error("Selected department already has a manager");
       }
     }
-
     const auth0User = await this.auth0ManagementService.createUser({
       name: data.name,
       email: data.email,

@@ -159,6 +159,12 @@ export class DepartmentController {
           department.managerId = null;
 
         } else {
+          if (department.managerId && department.managerId !== managerId) {
+            return res.status(400).json({
+              message:
+                "This department already has a manager. Remove the current manager first.",
+            });
+          }
 
           const manager = await this.userRepo.findOne({
             where: { id: managerId },
@@ -269,7 +275,25 @@ export class DepartmentController {
     try {
 
       const { id } = req.params;
-      const { userId } = req.body;
+      const { userId, userIds } = req.body as {
+        userId?: string;
+        userIds?: string[];
+      };
+      const targetUserIds = Array.from(
+        new Set(
+          Array.isArray(userIds)
+            ? userIds.filter((value): value is string => Boolean(value))
+            : userId
+              ? [userId]
+              : []
+        )
+      );
+
+      if (targetUserIds.length === 0) {
+        return res.status(400).json({
+          message: "At least one user is required",
+        });
+      }
 
       const department = await this.deptRepo.findOne({
         where: { id: String(id) },
@@ -281,43 +305,48 @@ export class DepartmentController {
         });
       }
 
-      const user = await this.userRepo.findOne({
-        where: { id: userId },
+      const users = await this.userRepo.find({
+        where: targetUserIds.map((targetUserId) => ({ id: targetUserId })),
       });
 
-      if (!user) {
+      if (users.length !== targetUserIds.length) {
         return res.status(404).json({
-          message: "User not found",
+          message: "One or more users were not found",
         });
       }
 
-      if (user.roleName === RoleName.MANAGER) {
-        const managedDepartment = await this.deptRepo.findOne({
-          where: { managerId: user.id },
-        });
+      const invalidUsers = users.filter((user) => user.roleName !== RoleName.USER);
 
-        if (managedDepartment && managedDepartment.id !== department.id) {
-          return res.status(400).json({
-            message:
-              "Assigned department manager cannot be added as a member of another department",
-          });
-        }
+      if (invalidUsers.length > 0) {
+        return res.status(400).json({
+          message: "Only users with USER role can be assigned",
+        });
       }
 
-      user.departmentId = department.id;
-      await this.userRepo.save(user);
-
-      //  Audit log
-      await this.auditService.log({
-        action: "USER_ASSIGNED_DEPARTMENT",
-        actorId: req.user?.id,
-        entityType: "User",
-        entityId: user.id,
-        message: `${user.email} assigned to department ${department.name}`,
+      users.forEach((user) => {
+        user.departmentId = department.id;
       });
+
+      await this.userRepo.save(users);
+
+      await Promise.all(
+        users.map((user) =>
+          this.auditService.log({
+            action: "USER_ASSIGNED_DEPARTMENT",
+            actorId: req.user?.id,
+            entityType: "User",
+            entityId: user.id,
+            message: `${user.email} assigned to department ${department.name}`,
+          })
+        )
+      );
 
       return res.json({
-        message: "User assigned successfully",
+        message:
+          users.length === 1
+            ? "User assigned successfully"
+            : "Users assigned successfully",
+        assignedCount: users.length,
       });
 
     } catch (error) {

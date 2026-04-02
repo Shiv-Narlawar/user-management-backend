@@ -22,13 +22,15 @@ export const authorize = (
 
     // permissions missing
     if (!Array.isArray(user.permissions)) {
-      return res.status(403).json({ message: "Forbidden" });
+      return res.status(403).json({
+        message: "You are not permitted to perform this action.",
+      });
     }
 
     // check
     if (!user.permissions.includes(requiredPermission)) {
       return res.status(403).json({
-        message: "Not allowed",
+        message: "You are not permitted to perform this action.",
       });
     }
 

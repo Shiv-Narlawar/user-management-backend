@@ -112,9 +112,11 @@ export class RoleController {
       });
     }
 
-    const permissionEntities = await this.permissionRepo.find({
-      where: permissions.map((name) => ({ name })),
-    });
+    const permissionEntities = permissions.length
+      ? await this.permissionRepo.find({
+          where: permissions.map((name) => ({ name })),
+        })
+      : [];
 
     role.permissions = permissionEntities;
 

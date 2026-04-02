@@ -39,7 +39,7 @@ export const getUsersQuerySchema = z.object({
     .transform((v) => v.trim())
     .optional(),
 
-     role: z.enum([RoleName.USER, RoleName.MANAGER]).optional(),
+  role: z.enum([RoleName.USER, RoleName.MANAGER, RoleName.ADMIN]).optional(),
 
   page: z.coerce
     .number()
